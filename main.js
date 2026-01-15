@@ -67,16 +67,23 @@ let objects = {
     transformedQProjection: null,
     // Final result after QVQ^(-1)
     finalResult: null,
+    // Final result projection
+    finalResultProjection: null,
     // Coordinate system axes
     coordinateAxes: null,
     // Transformed coordinate system
     transformedAxes: null,
     // Second coordinate system (for QVQ^-1)
-    transformedAxes2: null
+    transformedAxes2: null,
+    // Identity element (1) for real quaternion mode
+    identityOne: null,
+    // Transformed identity (1 -> V or 1 -> Q^-1)
+    transformedIdentity: null
 };
 
 // State
 let showFinalResult = false;
+let realQuaternionMode = false;
 
 // Create Z-axis unit vector visualization
 function createZAxisVector() {
@@ -370,32 +377,217 @@ function updateAngleDisplay() {
     }
 
     try {
-        const result = calculateQVQResult();
+        if (realQuaternionMode) {
+            // Real quaternion mode
+            const result = calculateRealQVQResult();
 
-        // Calculate angles
-        const angleQtoQT = Math.acos(
-            Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.transformedQPos.clone().normalize())))
-        ) * (180 / Math.PI);
+            // Q ↔ QV angle
+            const angleQtoQV = Math.acos(
+                Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.qvPos.clone().normalize())))
+            ) * (180 / Math.PI);
 
-        const angleQtoFinal = Math.acos(
-            Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.finalPos.clone().normalize())))
-        ) * (180 / Math.PI);
+            // Q ↔ Final angle
+            const angleQtoFinal = Math.acos(
+                Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.finalPos.clone().normalize())))
+            ) * (180 / Math.PI);
 
-        const angleQTtoFinal = Math.acos(
-            Math.max(-1, Math.min(1, result.transformedQPos.clone().normalize().dot(result.finalPos.clone().normalize())))
-        ) * (180 / Math.PI);
+            // QV ↔ Final angle
+            const angleQVtoFinal = Math.acos(
+                Math.max(-1, Math.min(1, result.qvPos.clone().normalize().dot(result.finalPos.clone().normalize())))
+            ) * (180 / Math.PI);
 
-        angleQQtElem.textContent = angleQtoQT.toFixed(2) + '°';
-        angleQFinalElem.textContent = angleQtoFinal.toFixed(2) + '°';
-        angleQtFinalElem.textContent = angleQTtoFinal.toFixed(2) + '°';
+            angleQQtElem.textContent = angleQtoQV.toFixed(2) + '°';
+            angleQFinalElem.textContent = angleQtoFinal.toFixed(2) + '°';
+            angleQtFinalElem.textContent = angleQVtoFinal.toFixed(2) + '°';
 
-        console.log('Angles updated:', angleQtoQT.toFixed(2), angleQtoFinal.toFixed(2), angleQTtoFinal.toFixed(2));
+            console.log('[Real Quat] Angles:', angleQtoQV.toFixed(2), angleQtoFinal.toFixed(2), angleQVtoFinal.toFixed(2));
+        } else {
+            // Pseudo-quaternion mode
+            const result = calculateQVQResult();
+
+            // Calculate angles
+            const angleQtoQT = Math.acos(
+                Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.transformedQPos.clone().normalize())))
+            ) * (180 / Math.PI);
+
+            const angleQtoFinal = Math.acos(
+                Math.max(-1, Math.min(1, result.qPos.clone().normalize().dot(result.finalPos.clone().normalize())))
+            ) * (180 / Math.PI);
+
+            const angleQTtoFinal = Math.acos(
+                Math.max(-1, Math.min(1, result.transformedQPos.clone().normalize().dot(result.finalPos.clone().normalize())))
+            ) * (180 / Math.PI);
+
+            angleQQtElem.textContent = angleQtoQT.toFixed(2) + '°';
+            angleQFinalElem.textContent = angleQtoFinal.toFixed(2) + '°';
+            angleQtFinalElem.textContent = angleQTtoFinal.toFixed(2) + '°';
+
+            console.log('[Pseudo Quat] Angles:', angleQtoQT.toFixed(2), angleQtoFinal.toFixed(2), angleQTtoFinal.toFixed(2));
+        }
     } catch (error) {
         console.error('Error updating angles:', error);
     }
 }
 
-// Calculate QVQ^(-1) result
+// ============================================
+// Real Quaternion Functions
+// ============================================
+
+// Quaternion class for real quaternion operations
+class Quat {
+    constructor(w, x, y, z) {
+        this.w = w; // real part
+        this.x = x; // i component
+        this.y = y; // j component
+        this.z = z; // k component
+    }
+
+    // Multiply two quaternions: this * other
+    multiply(other) {
+        const w = this.w * other.w - this.x * other.x - this.y * other.y - this.z * other.z;
+        const x = this.w * other.x + this.x * other.w + this.y * other.z - this.z * other.y;
+        const y = this.w * other.y - this.x * other.z + this.y * other.w + this.z * other.x;
+        const z = this.w * other.z + this.x * other.y - this.y * other.x + this.z * other.w;
+        return new Quat(w, x, y, z);
+    }
+
+    // Conjugate (inverse for unit quaternion)
+    conjugate() {
+        return new Quat(this.w, -this.x, -this.y, -this.z);
+    }
+
+    // Get 3D position for visualization (z=w, x=i, y=j, ignoring k)
+    toVisualPosition() {
+        return new THREE.Vector3(this.x, this.y, this.w);
+    }
+
+    // Get length
+    length() {
+        return Math.sqrt(this.w * this.w + this.x * this.x + this.y * this.y + this.z * this.z);
+    }
+
+    // Normalize
+    normalize() {
+        const len = this.length();
+        if (len === 0) return new Quat(1, 0, 0, 0);
+        return new Quat(this.w / len, this.x / len, this.y / len, this.z / len);
+    }
+
+    toString() {
+        return `(${this.w.toFixed(3)} + ${this.x.toFixed(3)}i + ${this.y.toFixed(3)}j + ${this.z.toFixed(3)}k)`;
+    }
+}
+
+// Create rotation quaternion Q = cos(θ/2) + sin(θ/2)·(xi + yj + zk)
+function createRotationQuaternion(theta, dx, dy) {
+    const thetaRad = (theta * Math.PI) / 180;
+    const halfTheta = thetaRad / 2;
+    const cosHalf = Math.cos(halfTheta);
+    const sinHalf = Math.sin(halfTheta);
+
+    // Normalize the axis direction (dx, dy, 0)
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length === 0) return new Quat(1, 0, 0, 0);
+
+    const nx = dx / length;
+    const ny = dy / length;
+
+    // Q = cos(θ/2) + sin(θ/2)·(nx·i + ny·j + 0·k)
+    return new Quat(cosHalf, sinHalf * nx, sinHalf * ny, 0);
+}
+
+// Create pure quaternion from point V (0 + vx·i + vy·j + 0·k)
+function createPureQuaternion(vx, vy) {
+    return new Quat(0, vx, vy, 0);
+}
+
+// Calculate real quaternion QVQ^(-1) result
+function calculateRealQVQResult() {
+    const Q = createRotationQuaternion(params.theta, params.dx, params.dy);
+    const V = createPureQuaternion(params.vx, params.vy);
+    const QInv = Q.conjugate();
+
+    // QV
+    const QV = Q.multiply(V);
+    // QVQ^(-1)
+    const QVQInv = QV.multiply(QInv);
+
+    console.log('=== Real Quaternion Calculation ===');
+    console.log('Q:', Q.toString());
+    console.log('V:', V.toString());
+    console.log('Q^(-1):', QInv.toString());
+    console.log('QV:', QV.toString());
+    console.log('QVQ^(-1):', QVQInv.toString());
+
+    return {
+        Q,
+        V,
+        QInv,
+        QV,
+        QVQInv,
+        qPos: Q.toVisualPosition(),
+        vPos: V.toVisualPosition(),
+        qInvPos: QInv.toVisualPosition(),
+        qvPos: QV.toVisualPosition(),
+        finalPos: QVQInv.toVisualPosition()
+    };
+}
+
+// Create visualization for real quaternion point
+function createRealQuaternionPoint(quat, color, label = '') {
+    const pos = quat.toVisualPosition();
+
+    const geometry = new THREE.SphereGeometry(0.12, 16, 16);
+    const material = new THREE.MeshPhongMaterial({ color: color });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(pos);
+
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        pos
+    ]);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 3 });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+
+    const group = new THREE.Group();
+    group.add(sphere);
+    group.add(line);
+    group.userData = { quat, label };
+
+    return group;
+}
+
+// Create identity element (1) visualization - white sphere at (0, 0, 1)
+function createIdentityElement() {
+    const identity = new Quat(1, 0, 0, 0);
+    const pos = identity.toVisualPosition(); // (0, 0, 1)
+
+    const geometry = new THREE.SphereGeometry(0.1, 16, 16);
+    const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(pos);
+
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        pos
+    ]);
+    const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        linewidth: 2,
+        transparent: true,
+        opacity: 0.7
+    });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+
+    const group = new THREE.Group();
+    group.add(sphere);
+    group.add(line);
+    group.userData = { quat: identity, label: '1' };
+
+    return group;
+}
+
+// Calculate QVQ^(-1) result (pseudo-quaternion version)
 function calculateQVQResult() {
     const thetaRad = (params.theta * Math.PI) / 180;
     const cosTheta = Math.cos(thetaRad);
@@ -438,6 +630,15 @@ function initObjects() {
         if (obj) scene.remove(obj);
     });
 
+    if (realQuaternionMode) {
+        initRealQuaternionObjects();
+    } else {
+        initPseudoQuaternionObjects();
+    }
+}
+
+// Initialize pseudo-quaternion visualization objects
+function initPseudoQuaternionObjects() {
     // Create new objects
     objects.zAxis = createZAxisVector();
     scene.add(objects.zAxis);
@@ -506,6 +707,84 @@ function initObjects() {
     }
 }
 
+// Initialize real quaternion visualization objects
+function initRealQuaternionObjects() {
+    // In real quaternion mode:
+    // - z-axis represents real (w) component
+    // - x-axis represents i component
+    // - y-axis represents j component
+    // - k component is not visualized
+
+    // Create rotation axis D (in xy plane)
+    objects.axisD = createAxisD(params.dx, params.dy);
+    scene.add(objects.axisD);
+
+    // Calculate real quaternion values
+    const result = calculateRealQVQResult();
+
+    // Create identity element (1) visualization - white sphere
+    objects.identityOne = createIdentityElement();
+    scene.add(objects.identityOne);
+
+    // Create Q = cos(θ/2) + sin(θ/2)·D visualization (cyan)
+    objects.quaternionQ = createRealQuaternionPoint(result.Q, 0x00ffff, 'Q');
+    scene.add(objects.quaternionQ);
+
+    // Create Q^(-1) visualization (pink)
+    objects.quaternionQInv = createRealQuaternionPoint(result.QInv, 0xff00aa, 'Q^(-1)');
+    scene.add(objects.quaternionQInv);
+
+    // Create V as pure quaternion (yellow) - positioned on xy plane (z=0 since w=0)
+    objects.pointV = createRealQuaternionPoint(result.V, 0xffff00, 'V');
+    scene.add(objects.pointV);
+
+    // Show intermediate and final results if checkbox is checked
+    if (showFinalResult) {
+        // Show QV (intermediate result - orange)
+        objects.transformedQ = createRealQuaternionPoint(result.QV, 0xff6600, 'QV');
+        scene.add(objects.transformedQ);
+
+        // Show QV projection on xy plane (w=0 plane)
+        objects.transformedQProjection = createProjectionPoint(
+            result.qvPos.x,
+            result.qvPos.y,
+            result.qvPos.z,
+            0xff6600
+        );
+        scene.add(objects.transformedQProjection);
+
+        // Show QVQ^(-1) (final result - green)
+        const finalGroup = new THREE.Group();
+        const finalSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.15, 16, 16),
+            new THREE.MeshPhongMaterial({ color: 0x00ff00 })
+        );
+        finalSphere.position.copy(result.finalPos);
+
+        const finalLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                result.finalPos
+            ]),
+            new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 3 })
+        );
+
+        finalGroup.add(finalSphere);
+        finalGroup.add(finalLine);
+        objects.finalResult = finalGroup;
+        scene.add(objects.finalResult);
+
+        // Show final result projection on xy plane
+        objects.finalResultProjection = createProjectionPoint(
+            result.finalPos.x,
+            result.finalPos.y,
+            result.finalPos.z,
+            0x00ff00
+        );
+        scene.add(objects.finalResultProjection);
+    }
+}
+
 // Update visualization based on current parameters
 function updateVisualization() {
     initObjects();
@@ -552,6 +831,39 @@ vxSlider.addEventListener('input', (e) => {
 vySlider.addEventListener('input', (e) => {
     params.vy = parseFloat(e.target.value) / 100;
     vyValue.textContent = params.vy.toFixed(2);
+    updateVisualization();
+});
+
+// Real quaternion mode checkbox
+const realQuaternionModeCheckbox = document.getElementById('real-quaternion-mode');
+realQuaternionModeCheckbox.addEventListener('change', (e) => {
+    realQuaternionMode = e.target.checked;
+    console.log('Real Quaternion Mode:', realQuaternionMode ? 'ON' : 'OFF');
+
+    // Toggle info panel
+    const pseudoInfo = document.getElementById('pseudo-mode-info');
+    const realInfo = document.getElementById('real-mode-info');
+    if (pseudoInfo && realInfo) {
+        pseudoInfo.style.display = realQuaternionMode ? 'none' : 'block';
+        realInfo.style.display = realQuaternionMode ? 'block' : 'none';
+    }
+
+    // Update angle labels
+    const label1 = document.getElementById('angle-label-1');
+    const label2 = document.getElementById('angle-label-2');
+    const label3 = document.getElementById('angle-label-3');
+    if (label1 && label2 && label3) {
+        if (realQuaternionMode) {
+            label1.textContent = 'Q ↔ QV';
+            label2.textContent = 'Q ↔ Final';
+            label3.textContent = 'QV ↔ Final';
+        } else {
+            label1.textContent = 'Q ↔ _Q';
+            label2.textContent = 'Q ↔ Final';
+            label3.textContent = '_Q ↔ Final';
+        }
+    }
+
     updateVisualization();
 });
 
@@ -603,6 +915,158 @@ document.getElementById('reset').addEventListener('click', () => {
 
 // QV Animation
 function animateQV() {
+    if (realQuaternionMode) {
+        animateRealQV();
+    } else {
+        animatePseudoQV();
+    }
+}
+
+// Real Quaternion QV Animation
+function animateRealQV() {
+    isAnimating = true;
+    animationProgress = 0;
+
+    console.log('=== Real Quaternion QV 연산 시작 ===');
+    console.log('Q * V = QV (quaternion multiplication)');
+    console.log('동시에 1 * V = V 변환도 보여줍니다 (항등원의 관점)');
+    console.log('색상 변화: 스케일이 변하므로 색상도 변함');
+
+    const result = calculateRealQVQResult();
+
+    console.log('V quaternion:', result.V.toString());
+    console.log('V visual position:', result.vPos);
+    console.log('QV quaternion:', result.QV.toString());
+    console.log('QV visual position:', result.qvPos);
+
+    // Identity element position (1, 0, 0, 0) -> visual (0, 0, 1)
+    const identityPos = new THREE.Vector3(0, 0, 1);
+    const vPos = result.vPos.clone();
+    const qPos = result.qPos.clone();
+    const qvPos = result.qvPos.clone();
+
+    // Colors for interpolation
+    const colorIdentityStart = new THREE.Color(0xaaaaaa); // gray
+    const colorIdentityEnd = new THREE.Color(0xffff00);   // yellow (V's color)
+    const colorQStart = new THREE.Color(0x00ffff);        // cyan (Q's color)
+    const colorQEnd = new THREE.Color(0xff6600);          // orange (QV's color)
+
+    // Create QV visualization (Q -> QV) - starts cyan, ends orange
+    if (objects.transformedQ) scene.remove(objects.transformedQ);
+    objects.transformedQ = new THREE.Group();
+    const qvSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorQStart.clone() })
+    );
+    const qvLineGeometry = new THREE.BufferGeometry();
+    const qvPositions = new Float32Array(6);
+    qvLineGeometry.setAttribute('position', new THREE.BufferAttribute(qvPositions, 3));
+    const qvLine = new THREE.Line(
+        qvLineGeometry,
+        new THREE.LineBasicMaterial({ color: colorQStart.clone(), linewidth: 3 })
+    );
+    objects.transformedQ.add(qvSphere);
+    objects.transformedQ.add(qvLine);
+    objects.transformedQ.visible = false;
+    scene.add(objects.transformedQ);
+
+    // Create transformed identity visualization (1 -> V) - starts gray, ends yellow
+    if (objects.transformedIdentity) scene.remove(objects.transformedIdentity);
+    objects.transformedIdentity = new THREE.Group();
+    const identitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorIdentityStart.clone(), transparent: true, opacity: 0.8 })
+    );
+    const identityLineGeometry = new THREE.BufferGeometry();
+    const identityPositions = new Float32Array(6);
+    identityLineGeometry.setAttribute('position', new THREE.BufferAttribute(identityPositions, 3));
+    const identityLine = new THREE.Line(
+        identityLineGeometry,
+        new THREE.LineDashedMaterial({ color: colorIdentityStart.clone(), linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    objects.transformedIdentity.add(identitySphere);
+    objects.transformedIdentity.add(identityLine);
+    objects.transformedIdentity.visible = false;
+    scene.add(objects.transformedIdentity);
+
+    const duration = 3000;
+    const startTime = Date.now();
+
+    function updateLineGeometry(line, endPos) {
+        const posArray = line.geometry.attributes.position.array;
+        posArray[0] = 0; posArray[1] = 0; posArray[2] = 0;
+        posArray[3] = endPos.x;
+        posArray[4] = endPos.y;
+        posArray[5] = endPos.z;
+        line.geometry.attributes.position.needsUpdate = true;
+        if (line.computeLineDistances) line.computeLineDistances();
+    }
+
+    function updateColor(group, color) {
+        group.children[0].material.color.copy(color);
+        group.children[1].material.color.copy(color);
+    }
+
+    function animate() {
+        const elapsed = Date.now() - startTime;
+        const t = Math.min(elapsed / duration, 1);
+
+        if (t < 0.33) {
+            // Phase 1: Show initial state (1, Q, V)
+            objects.transformedQ.visible = false;
+            objects.transformedIdentity.visible = false;
+        } else if (t < 0.67) {
+            // Phase 2: Animate Q -> QV and 1 -> V simultaneously (with color change for scale)
+            const phaseT = (t - 0.33) / 0.34;
+            const phaseEased = phaseT < 0.5 ? 2 * phaseT * phaseT : 1 - Math.pow(-2 * phaseT + 2, 2) / 2;
+
+            // Q -> QV animation with color change (cyan -> orange)
+            objects.transformedQ.visible = true;
+            const interpolatedQV = new THREE.Vector3();
+            interpolatedQV.lerpVectors(qPos, qvPos, phaseEased);
+            objects.transformedQ.children[0].position.copy(interpolatedQV);
+            updateLineGeometry(objects.transformedQ.children[1], interpolatedQV);
+            // Color interpolation for scale change
+            const currentColorQ = colorQStart.clone().lerp(colorQEnd, phaseEased);
+            updateColor(objects.transformedQ, currentColorQ);
+
+            // 1 -> V animation with color change (gray -> yellow)
+            objects.transformedIdentity.visible = true;
+            const interpolatedIdentity = new THREE.Vector3();
+            interpolatedIdentity.lerpVectors(identityPos, vPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentity);
+            updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity);
+            // Color interpolation for scale change
+            const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
+            updateColor(objects.transformedIdentity, currentColorIdentity);
+        } else {
+            // Phase 3: Show final state with final colors
+            objects.transformedQ.visible = true;
+            objects.transformedQ.children[0].position.copy(qvPos);
+            updateLineGeometry(objects.transformedQ.children[1], qvPos);
+            updateColor(objects.transformedQ, colorQEnd);
+
+            objects.transformedIdentity.visible = true;
+            objects.transformedIdentity.children[0].position.copy(vPos);
+            updateLineGeometry(objects.transformedIdentity.children[1], vPos);
+            updateColor(objects.transformedIdentity, colorIdentityEnd);
+        }
+
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            isAnimating = false;
+            console.log('Real QV animation complete');
+            console.log('Q -> QV:', qvPos);
+            console.log('1 -> V:', vPos);
+        }
+    }
+
+    animate();
+}
+
+// Pseudo-Quaternion QV Animation
+function animatePseudoQV() {
     isAnimating = true;
     animationProgress = 0;
 
@@ -697,20 +1161,26 @@ function animateQV() {
     objects.transformedAxes.visible = false;
     scene.add(objects.transformedAxes);
 
-    // Create transformed Q
+    // Colors for interpolation (scale change visualization)
+    const colorQStart = new THREE.Color(0x00ffff);        // cyan (Q's color)
+    const colorQEnd = new THREE.Color(0xff6600);          // orange (_Q's color)
+    const colorIdentityStart = new THREE.Color(0x00ff00); // green (z-axis color)
+    const colorIdentityEnd = new THREE.Color(0xffff00);   // yellow (V's color)
+
+    // Create transformed Q with dynamic color
     if (objects.transformedQ) scene.remove(objects.transformedQ);
     const transformedQGroup = new THREE.Group();
     const sphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.12, 16, 16),
-        new THREE.MeshPhongMaterial({ color: 0xff6600 })
+        new THREE.MeshPhongMaterial({ color: colorQStart.clone() })
     );
     sphere.position.copy(transformedQPos);
+    const lineGeometry = new THREE.BufferGeometry();
+    const linePositions = new Float32Array(6);
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
     const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            transformedQPos
-        ]),
-        new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 3 })
+        lineGeometry,
+        new THREE.LineBasicMaterial({ color: colorQStart.clone(), linewidth: 3 })
     );
     transformedQGroup.add(sphere);
     transformedQGroup.add(line);
@@ -718,11 +1188,49 @@ function animateQV() {
     scene.add(transformedQGroup);
     objects.transformedQ = transformedQGroup;
 
+    // Create transformed identity (z-axis -> V) visualization
+    if (objects.transformedIdentity) scene.remove(objects.transformedIdentity);
+    objects.transformedIdentity = new THREE.Group();
+    const identitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorIdentityStart.clone(), transparent: true, opacity: 0.8 })
+    );
+    const identityLineGeometry = new THREE.BufferGeometry();
+    const identityLinePositions = new Float32Array(6);
+    identityLineGeometry.setAttribute('position', new THREE.BufferAttribute(identityLinePositions, 3));
+    const identityLine = new THREE.Line(
+        identityLineGeometry,
+        new THREE.LineDashedMaterial({ color: colorIdentityStart.clone(), linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    objects.transformedIdentity.add(identitySphere);
+    objects.transformedIdentity.add(identityLine);
+    objects.transformedIdentity.visible = false;
+    scene.add(objects.transformedIdentity);
+
+    // V position for identity transformation target
+    const vPos = new THREE.Vector3(params.vx, params.vy, 0);
+
     console.log('Q:', qPos);
     console.log('_Q (변환 후):', transformedQPos);
+    console.log('색상 변화: 스케일이 변하므로 색상도 변함');
 
     const duration = 3000; // 3 seconds
     const startTime = Date.now();
+
+    function updateLineGeometry(lineObj, endPos) {
+        const posArray = lineObj.geometry.attributes.position.array;
+        posArray[0] = 0; posArray[1] = 0; posArray[2] = 0;
+        posArray[3] = endPos.x;
+        posArray[4] = endPos.y;
+        posArray[5] = endPos.z;
+        lineObj.geometry.attributes.position.needsUpdate = true;
+        if (lineObj.computeLineDistances) lineObj.computeLineDistances();
+    }
+
+    function updateColor(group, color) {
+        group.children[0].material.color.copy(color);
+        group.children[1].material.color.copy(color);
+    }
 
     function animate() {
         const elapsed = Date.now() - startTime;
@@ -734,11 +1242,11 @@ function animateQV() {
 
         if (t < 0.33) {
             // Phase 1: Show initial state
-            console.log('Phase 1: 초기 상태 - z축과 Q');
             objects.transformedAxes.visible = false;
             objects.transformedQ.visible = false;
+            objects.transformedIdentity.visible = false;
         } else if (t < 0.67) {
-            // Phase 2: Transform coordinate system
+            // Phase 2: Transform coordinate system with color change
             const phaseT = (t - 0.33) / 0.34;
             const phaseEased = phaseT < 0.5 ? 2 * phaseT * phaseT : 1 - Math.pow(-2 * phaseT + 2, 2) / 2;
 
@@ -768,19 +1276,33 @@ function animateQV() {
             objects.transformedAxes.quaternion.copy(currentQuat);
             objects.transformedAxes.scale.copy(currentScale);
 
-            // Transform Q
+            // Transform Q with color change (cyan -> orange)
             const interpolatedQPos = new THREE.Vector3();
             interpolatedQPos.lerpVectors(qPos, transformedQPos, phaseEased);
             transformedQGroup.children[0].position.copy(interpolatedQPos);
-            transformedQGroup.children[1].geometry.setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                interpolatedQPos
-            ]);
+            updateLineGeometry(transformedQGroup.children[1], interpolatedQPos);
+            const currentColorQ = colorQStart.clone().lerp(colorQEnd, phaseEased);
+            updateColor(objects.transformedQ, currentColorQ);
             objects.transformedQ.visible = true;
+
+            // Transform identity (z-axis -> V) with color change (green -> yellow)
+            const interpolatedIdentityPos = new THREE.Vector3();
+            interpolatedIdentityPos.lerpVectors(zAxis, vPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos);
+            updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentityPos);
+            const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
+            updateColor(objects.transformedIdentity, currentColorIdentity);
+            objects.transformedIdentity.visible = true;
         } else {
-            // Phase 3: Show final result
+            // Phase 3: Show final result with final colors
             objects.transformedAxes.visible = true;
             objects.transformedQ.visible = true;
+            updateColor(objects.transformedQ, colorQEnd);
+
+            objects.transformedIdentity.visible = true;
+            objects.transformedIdentity.children[0].position.copy(vPos);
+            updateLineGeometry(objects.transformedIdentity.children[1], vPos);
+            updateColor(objects.transformedIdentity, colorIdentityEnd);
         }
 
         if (t < 1) {
@@ -797,6 +1319,205 @@ function animateQV() {
 
 // QVQ^(-1) Animation
 function animateQVQ() {
+    if (realQuaternionMode) {
+        animateRealQVQ();
+    } else {
+        animatePseudoQVQ();
+    }
+}
+
+// Real Quaternion QVQ^(-1) Animation
+function animateRealQVQ() {
+    isAnimating = true;
+    animationProgress = 0;
+
+    console.log('=== Real Quaternion QVQ^(-1) 연산 시작 ===');
+    console.log('Step 1: Q * V = QV (동시에 1 * V = V) - 스케일 변화로 색상 변함');
+    console.log('Step 2: QV * Q^(-1) = Final (동시에 1 * Q^(-1) = Q^(-1)) - 방향만 변화, 색상 유지');
+
+    const result = calculateRealQVQResult();
+
+    console.log('V:', result.V.toString(), '-> visual:', result.vPos);
+    console.log('QV:', result.QV.toString(), '-> visual:', result.qvPos);
+    console.log('Final:', result.QVQInv.toString(), '-> visual:', result.finalPos);
+
+    // Positions
+    const identityPos = new THREE.Vector3(0, 0, 1); // (1, 0, 0, 0) -> visual (0, 0, 1)
+    const qPos = result.qPos.clone();
+    const vPos = result.vPos.clone();
+    const qInvPos = result.qInvPos.clone();
+    const qvPos = result.qvPos.clone();
+    const finalPos = result.finalPos.clone();
+
+    // Colors for interpolation (only for first phase - scale change)
+    const colorIdentityStart = new THREE.Color(0xaaaaaa); // gray
+    const colorIdentityEnd = new THREE.Color(0xffff00);   // yellow (V's color)
+    const colorQStart = new THREE.Color(0x00ffff);        // cyan (Q's color)
+    const colorQEnd = new THREE.Color(0xff6600);          // orange (QV's color)
+
+    // Create QV visualization (Q -> QV) - starts cyan, ends orange
+    if (objects.transformedQ) scene.remove(objects.transformedQ);
+    objects.transformedQ = new THREE.Group();
+    const qvSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorQStart.clone() })
+    );
+    const qvLineGeometry = new THREE.BufferGeometry();
+    const qvPositions = new Float32Array(6);
+    qvLineGeometry.setAttribute('position', new THREE.BufferAttribute(qvPositions, 3));
+    const qvLine = new THREE.Line(
+        qvLineGeometry,
+        new THREE.LineBasicMaterial({ color: colorQStart.clone(), linewidth: 3 })
+    );
+    objects.transformedQ.add(qvSphere);
+    objects.transformedQ.add(qvLine);
+    objects.transformedQ.visible = false;
+    scene.add(objects.transformedQ);
+
+    // Create final result visualization - same color as QV (orange) since no scale change
+    if (objects.finalResult) scene.remove(objects.finalResult);
+    objects.finalResult = new THREE.Group();
+    const finalSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorQEnd.clone() })
+    );
+    const finalLineGeometry = new THREE.BufferGeometry();
+    const finalPositions = new Float32Array(6);
+    finalLineGeometry.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
+    const finalLine = new THREE.Line(
+        finalLineGeometry,
+        new THREE.LineBasicMaterial({ color: colorQEnd.clone(), linewidth: 3 })
+    );
+    objects.finalResult.add(finalSphere);
+    objects.finalResult.add(finalLine);
+    objects.finalResult.visible = false;
+    scene.add(objects.finalResult);
+
+    // Create transformed identity visualization - starts gray, ends yellow in phase 2
+    if (objects.transformedIdentity) scene.remove(objects.transformedIdentity);
+    objects.transformedIdentity = new THREE.Group();
+    const identitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorIdentityStart.clone(), transparent: true, opacity: 0.8 })
+    );
+    const identityLineGeometry = new THREE.BufferGeometry();
+    const identityPositions = new Float32Array(6);
+    identityLineGeometry.setAttribute('position', new THREE.BufferAttribute(identityPositions, 3));
+    const identityLine = new THREE.Line(
+        identityLineGeometry,
+        new THREE.LineDashedMaterial({ color: colorIdentityStart.clone(), linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    objects.transformedIdentity.add(identitySphere);
+    objects.transformedIdentity.add(identityLine);
+    objects.transformedIdentity.visible = false;
+    scene.add(objects.transformedIdentity);
+
+    const duration = 6000;
+    const startTime = Date.now();
+
+    function updateLineGeometry(line, endPos) {
+        const posArray = line.geometry.attributes.position.array;
+        posArray[0] = 0; posArray[1] = 0; posArray[2] = 0;
+        posArray[3] = endPos.x;
+        posArray[4] = endPos.y;
+        posArray[5] = endPos.z;
+        line.geometry.attributes.position.needsUpdate = true;
+        if (line.computeLineDistances) line.computeLineDistances();
+    }
+
+    function updateColor(group, color) {
+        group.children[0].material.color.copy(color);
+        group.children[1].material.color.copy(color);
+    }
+
+    function animate() {
+        const elapsed = Date.now() - startTime;
+        const t = Math.min(elapsed / duration, 1);
+        const easing = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+        if (t < 0.2) {
+            // Phase 1: Show initial state (1, Q, V, Q^-1)
+            objects.transformedQ.visible = false;
+            objects.finalResult.visible = false;
+            objects.transformedIdentity.visible = false;
+        } else if (t < 0.45) {
+            // Phase 2: Animate Q -> QV and 1 -> V simultaneously (WITH color change - scale changes)
+            const phaseT = (t - 0.2) / 0.25;
+            const phaseEased = easing(phaseT);
+
+            // Q -> QV with color change (cyan -> orange)
+            objects.transformedQ.visible = true;
+            const interpolatedQV = new THREE.Vector3();
+            interpolatedQV.lerpVectors(qPos, qvPos, phaseEased);
+            objects.transformedQ.children[0].position.copy(interpolatedQV);
+            updateLineGeometry(objects.transformedQ.children[1], interpolatedQV);
+            const currentColorQ = colorQStart.clone().lerp(colorQEnd, phaseEased);
+            updateColor(objects.transformedQ, currentColorQ);
+
+            // 1 -> V with color change (gray -> yellow)
+            objects.transformedIdentity.visible = true;
+            const interpolatedIdentity = new THREE.Vector3();
+            interpolatedIdentity.lerpVectors(identityPos, vPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentity);
+            updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity);
+            const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
+            updateColor(objects.transformedIdentity, currentColorIdentity);
+        } else if (t < 0.75) {
+            // Phase 3: Animate QV -> Final and 1 -> Q^(-1) (NO color change - only direction changes)
+            const phaseT = (t - 0.45) / 0.30;
+            const phaseEased = easing(phaseT);
+
+            // Keep QV visible at final position with final color (orange)
+            objects.transformedQ.visible = true;
+            objects.transformedQ.children[0].position.copy(qvPos);
+            updateLineGeometry(objects.transformedQ.children[1], qvPos);
+            updateColor(objects.transformedQ, colorQEnd);
+
+            // QV -> Final - color stays orange (no scale change)
+            objects.finalResult.visible = true;
+            const interpolatedFinal = new THREE.Vector3();
+            interpolatedFinal.lerpVectors(qvPos, finalPos, phaseEased);
+            objects.finalResult.children[0].position.copy(interpolatedFinal);
+            updateLineGeometry(objects.finalResult.children[1], interpolatedFinal);
+            // Color stays orange - no change
+
+            // 1 -> Q^(-1) - color stays yellow (no scale change, only direction)
+            objects.transformedIdentity.visible = true;
+            const interpolatedIdentity2 = new THREE.Vector3();
+            interpolatedIdentity2.lerpVectors(identityPos, qInvPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentity2);
+            updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity2);
+            // Keep yellow color - no change (only direction changes, not scale)
+            updateColor(objects.transformedIdentity, colorIdentityEnd);
+        } else {
+            // Phase 4: Show final result
+            objects.transformedQ.visible = false;
+            objects.finalResult.visible = true;
+            objects.finalResult.children[0].position.copy(finalPos);
+            updateLineGeometry(objects.finalResult.children[1], finalPos);
+
+            // Show identity at Q^-1 position with yellow color
+            objects.transformedIdentity.visible = true;
+            objects.transformedIdentity.children[0].position.copy(qInvPos);
+            updateLineGeometry(objects.transformedIdentity.children[1], qInvPos);
+            updateColor(objects.transformedIdentity, colorIdentityEnd);
+        }
+
+        if (t < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            isAnimating = false;
+            console.log('Real QVQ^(-1) animation complete');
+            console.log('Final position:', result.QVQInv.toString());
+            console.log('Final visual position:', finalPos);
+        }
+    }
+
+    animate();
+}
+
+// Pseudo-Quaternion QVQ^(-1) Animation
+function animatePseudoQVQ() {
     isAnimating = true;
     animationProgress = 0;
 
@@ -942,38 +1663,88 @@ function animateQVQ() {
     objects.transformedAxes2.visible = false;
     scene.add(objects.transformedAxes2);
 
+    // Colors for interpolation
+    const colorQStart = new THREE.Color(0x00ffff);        // cyan (Q's color)
+    const colorQEnd = new THREE.Color(0xff6600);          // orange (_Q's color)
+    const colorIdentityStart = new THREE.Color(0x00ff00); // green (z-axis color)
+    const colorIdentityEnd = new THREE.Color(0xffff00);   // yellow (V's color)
+
     if (objects.transformedQ) scene.remove(objects.transformedQ);
     objects.transformedQ = new THREE.Group();
     const transformedSphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.12, 16, 16),
-        new THREE.MeshPhongMaterial({ color: 0xff6600 })
+        new THREE.MeshPhongMaterial({ color: colorQStart.clone() })
     );
+    const transformedLineGeom = new THREE.BufferGeometry();
+    const transformedLinePos = new Float32Array(6);
+    transformedLineGeom.setAttribute('position', new THREE.BufferAttribute(transformedLinePos, 3));
     const transformedLine = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 3 })
+        transformedLineGeom,
+        new THREE.LineBasicMaterial({ color: colorQStart.clone(), linewidth: 3 })
     );
     objects.transformedQ.add(transformedSphere);
     objects.transformedQ.add(transformedLine);
     objects.transformedQ.visible = false;
     scene.add(objects.transformedQ);
 
+    // Final result uses same color as _Q (orange) since no scale change in phase 3
     if (objects.finalResult) scene.remove(objects.finalResult);
     objects.finalResult = new THREE.Group();
     const finalSphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.15, 16, 16),
-        new THREE.MeshPhongMaterial({ color: 0x00ff00 })
+        new THREE.MeshPhongMaterial({ color: colorQEnd.clone() })
     );
+    const finalLineGeom = new THREE.BufferGeometry();
+    const finalLinePos = new Float32Array(6);
+    finalLineGeom.setAttribute('position', new THREE.BufferAttribute(finalLinePos, 3));
     const finalLine = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 3 })
+        finalLineGeom,
+        new THREE.LineBasicMaterial({ color: colorQEnd.clone(), linewidth: 3 })
     );
     objects.finalResult.add(finalSphere);
     objects.finalResult.add(finalLine);
     objects.finalResult.visible = false;
     scene.add(objects.finalResult);
 
+    // Create transformed identity (z-axis -> V) visualization
+    if (objects.transformedIdentity) scene.remove(objects.transformedIdentity);
+    objects.transformedIdentity = new THREE.Group();
+    const identitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: colorIdentityStart.clone(), transparent: true, opacity: 0.8 })
+    );
+    const identityLineGeom = new THREE.BufferGeometry();
+    const identityLinePos = new Float32Array(6);
+    identityLineGeom.setAttribute('position', new THREE.BufferAttribute(identityLinePos, 3));
+    const identityLine = new THREE.Line(
+        identityLineGeom,
+        new THREE.LineDashedMaterial({ color: colorIdentityStart.clone(), linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    objects.transformedIdentity.add(identitySphere);
+    objects.transformedIdentity.add(identityLine);
+    objects.transformedIdentity.visible = false;
+    scene.add(objects.transformedIdentity);
+
+    // V position for identity transformation target
+    const vPos = new THREE.Vector3(params.vx, params.vy, 0);
+
     const duration = 6000; // 6 seconds
     const startTime = Date.now();
+
+    function updateLineGeometryPseudo(lineObj, endPos) {
+        const posArray = lineObj.geometry.attributes.position.array;
+        posArray[0] = 0; posArray[1] = 0; posArray[2] = 0;
+        posArray[3] = endPos.x;
+        posArray[4] = endPos.y;
+        posArray[5] = endPos.z;
+        lineObj.geometry.attributes.position.needsUpdate = true;
+        if (lineObj.computeLineDistances) lineObj.computeLineDistances();
+    }
+
+    function updateColorPseudo(group, color) {
+        group.children[0].material.color.copy(color);
+        group.children[1].material.color.copy(color);
+    }
 
     function animate() {
         const elapsed = Date.now() - startTime;
@@ -993,11 +1764,11 @@ function animateQVQ() {
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = false;
         } else if (t < 0.5) {
-            // Phase 2: First transformation (z → V), show _Q
+            // Phase 2: First transformation (z → V), show _Q (WITH color change - scale changes)
             const phaseT = (t - 0.25) / 0.25;
             const phaseEased = easing(phaseT);
 
-            if (phaseT === 0) console.log('Phase 2: 첫 번째 변환 (z → V)');
+            if (phaseT === 0) console.log('Phase 2: 첫 번째 변환 (z → V) - 스케일 변화로 색상 변함');
 
             objects.transformedAxes.visible = true;
             objects.transformedAxes2.visible = false;
@@ -1006,6 +1777,7 @@ function animateQVQ() {
             newZAxisGroup.visible = false;
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = true;
+            objects.transformedIdentity.visible = true;
 
             // Decompose first transformation matrix
             const targetPos1 = new THREE.Vector3();
@@ -1028,20 +1800,27 @@ function animateQVQ() {
             objects.transformedAxes.quaternion.copy(currentQuat);
             objects.transformedAxes.scale.copy(currentScale);
 
-            // Show _Q transformation
+            // Show _Q transformation with color change (cyan -> orange)
             const interpolatedQPos = new THREE.Vector3();
             interpolatedQPos.lerpVectors(qPos, transformedQPos, phaseEased);
             objects.transformedQ.children[0].position.copy(interpolatedQPos);
-            objects.transformedQ.children[1].geometry.setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                interpolatedQPos
-            ]);
+            updateLineGeometryPseudo(objects.transformedQ.children[1], interpolatedQPos);
+            const currentColorQ = colorQStart.clone().lerp(colorQEnd, phaseEased);
+            updateColorPseudo(objects.transformedQ, currentColorQ);
+
+            // Transform identity (z-axis -> V) with color change (green -> yellow)
+            const interpolatedIdentityPos = new THREE.Vector3();
+            interpolatedIdentityPos.lerpVectors(zAxis, vPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos);
+            updateLineGeometryPseudo(objects.transformedIdentity.children[1], interpolatedIdentityPos);
+            const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
+            updateColorPseudo(objects.transformedIdentity, currentColorIdentity);
         } else if (t < 0.75) {
-            // Phase 3: Second transformation (NEW z → Q^(-1))
+            // Phase 3: Second transformation (NEW z → Q^(-1)) - NO color change, only direction
             const phaseT = (t - 0.5) / 0.25;
             const phaseEased = easing(phaseT);
 
-            if (phaseT < 0.01) console.log('Phase 3: 두 번째 변환 (새로운 z → Q^(-1))');
+            if (phaseT < 0.01) console.log('Phase 3: 두 번째 변환 (새로운 z → Q^(-1)) - 방향만 변화, 색상 유지');
 
             // Keep first transformation visible but faded
             objects.transformedAxes.visible = true;
@@ -1051,6 +1830,7 @@ function animateQVQ() {
             newZAxisGroup.visible = true;
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = true;
+            objects.transformedIdentity.visible = true;
 
             // First transformation (faded)
             const pos1 = new THREE.Vector3();
@@ -1061,10 +1841,15 @@ function animateQVQ() {
             objects.transformedAxes.quaternion.copy(quat1);
             objects.transformedAxes.scale.copy(scale1);
 
+            // Keep _Q at final position with orange color (no change)
+            objects.transformedQ.children[0].position.copy(transformedQPos);
+            updateLineGeometryPseudo(objects.transformedQ.children[1], transformedQPos);
+            updateColorPseudo(objects.transformedQ, colorQEnd);
+
             // Animate second transformation
-            const identityPos = new THREE.Vector3(0, 0, 0);
-            const identityQuat = new THREE.Quaternion();
-            const identityScale = new THREE.Vector3(1, 1, 1);
+            const identityPos2 = new THREE.Vector3(0, 0, 0);
+            const identityQuat2 = new THREE.Quaternion();
+            const identityScale2 = new THREE.Vector3(1, 1, 1);
 
             const targetPos2 = new THREE.Vector3();
             const targetQuat2 = new THREE.Quaternion();
@@ -1072,13 +1857,13 @@ function animateQVQ() {
             transformMatrix2.decompose(targetPos2, targetQuat2, targetScale2);
 
             const currentPos2 = new THREE.Vector3();
-            currentPos2.lerpVectors(identityPos, targetPos2, phaseEased);
+            currentPos2.lerpVectors(identityPos2, targetPos2, phaseEased);
 
             const currentQuat2 = new THREE.Quaternion();
-            currentQuat2.slerpQuaternions(identityQuat, targetQuat2, phaseEased);
+            currentQuat2.slerpQuaternions(identityQuat2, targetQuat2, phaseEased);
 
             const currentScale2 = new THREE.Vector3();
-            currentScale2.lerpVectors(identityScale, targetScale2, phaseEased);
+            currentScale2.lerpVectors(identityScale2, targetScale2, phaseEased);
 
             objects.transformedAxes2.position.copy(currentPos2);
             objects.transformedAxes2.quaternion.copy(currentQuat2);
@@ -1106,14 +1891,19 @@ function animateQVQ() {
                 newZAxisGroup.scale.set(scaleAmount, scaleAmount, scaleAmount);
             }
 
-            // Show final result transformation
+            // Show final result transformation (_Q -> Final) - color stays orange
             const interpolatedFinalPos = new THREE.Vector3();
             interpolatedFinalPos.lerpVectors(transformedQPos, finalPos, phaseEased);
             objects.finalResult.children[0].position.copy(interpolatedFinalPos);
-            objects.finalResult.children[1].geometry.setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                interpolatedFinalPos
-            ]);
+            updateLineGeometryPseudo(objects.finalResult.children[1], interpolatedFinalPos);
+            // Color stays orange - no scale change, only direction
+
+            // Animate identity (V -> Q^(-1)) - color stays yellow (no scale change)
+            const interpolatedIdentityPos2 = new THREE.Vector3();
+            interpolatedIdentityPos2.lerpVectors(vPos, qInvPos, phaseEased);
+            objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos2);
+            updateLineGeometryPseudo(objects.transformedIdentity.children[1], interpolatedIdentityPos2);
+            updateColorPseudo(objects.transformedIdentity, colorIdentityEnd); // Keep yellow
         } else {
             // Phase 4: Show final result
             console.log('Phase 4: 최종 결과');
@@ -1124,6 +1914,7 @@ function animateQVQ() {
             newZAxisGroup.visible = false;
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = false; // Hide projection in final phase
+            objects.transformedIdentity.visible = true;
 
             // Show final coordinate system
             const pos2 = new THREE.Vector3();
@@ -1134,12 +1925,14 @@ function animateQVQ() {
             objects.transformedAxes2.quaternion.copy(quat2);
             objects.transformedAxes2.scale.copy(scale2);
 
-            // Show final result position
+            // Show final result position (orange)
             objects.finalResult.children[0].position.copy(finalPos);
-            objects.finalResult.children[1].geometry.setFromPoints([
-                new THREE.Vector3(0, 0, 0),
-                finalPos
-            ]);
+            updateLineGeometryPseudo(objects.finalResult.children[1], finalPos);
+
+            // Show identity at Q^(-1) position with yellow color
+            objects.transformedIdentity.children[0].position.copy(qInvPos);
+            updateLineGeometryPseudo(objects.transformedIdentity.children[1], qInvPos);
+            updateColorPseudo(objects.transformedIdentity, colorIdentityEnd); // Keep yellow
         }
 
         if (t < 1) {

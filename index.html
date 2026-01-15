@@ -115,6 +115,13 @@
 
         <div class="control-group">
             <label>
+                <input type="checkbox" id="real-quaternion-mode" style="width: auto; margin-right: 5px;">
+                Real Quaternion Mode
+            </label>
+        </div>
+
+        <div class="control-group">
+            <label>
                 <input type="checkbox" id="show-final-result" style="width: auto; margin-right: 5px;">
                 Show Final Result (QVQ⁻¹)
             </label>
@@ -127,17 +134,26 @@
 
     <div id="info">
         <h3>About</h3>
-        <p>이 시각화는 2D 평면에서 유사-Quaternion 회전을 보여줍니다.</p>
-        <p><strong>Q = cos(θ)·ẑ + sin(θ)·D</strong></p>
-        <p>마우스로 시점을 회전/확대/이동할 수 있습니다.</p>
+        <div id="pseudo-mode-info">
+            <p>유사-Quaternion 모드:</p>
+            <p><strong>Q = cos(θ)·ẑ + sin(θ)·D</strong></p>
+            <p>z축을 항등원으로 사용</p>
+        </div>
+        <div id="real-mode-info" style="display: none;">
+            <p>진짜 Quaternion 모드:</p>
+            <p><strong>Q = cos(θ/2) + sin(θ/2)·D</strong></p>
+            <p>축 매핑: z=real, x=i, y=j</p>
+            <p>V는 순수 quaternion (w=0)</p>
+        </div>
+        <p style="margin-top: 10px; font-size: 11px;">마우스로 시점을 회전/확대/이동</p>
     </div>
 
     <div id="angles" style="position: absolute; top: 20px; right: 20px; background: rgba(0, 0, 0, 0.7); padding: 15px; border-radius: 8px; color: white; font-size: 12px; min-width: 200px;">
         <h3 style="margin-top: 0; margin-bottom: 10px; color: #4af;">Angles</h3>
         <div id="angle-info">
-            <p>Q ↔ _Q: <span id="angle-q-qt">-</span></p>
-            <p>Q ↔ Final: <span id="angle-q-final">-</span></p>
-            <p>_Q ↔ Final: <span id="angle-qt-final">-</span></p>
+            <p><span id="angle-label-1">Q ↔ _Q</span>: <span id="angle-q-qt">-</span></p>
+            <p><span id="angle-label-2">Q ↔ Final</span>: <span id="angle-q-final">-</span></p>
+            <p><span id="angle-label-3">_Q ↔ Final</span>: <span id="angle-qt-final">-</span></p>
         </div>
     </div>
 
