@@ -84,6 +84,13 @@ let objects = {
 // State
 let showFinalResult = false;
 let realQuaternionMode = false;
+let show3DRotation = false;
+
+// 3D Rotation visualization objects (for real quaternion mode)
+let rotation3DObjects = {
+    vArrow: null,      // V's 3D position (i,j,k as x,y,z)
+    resultArrow: null  // QVQ^-1 result's 3D position
+};
 
 // Create Z-axis unit vector visualization
 function createZAxisVector() {
@@ -427,6 +434,133 @@ function updateTriangle(triangleGroup, p1, p2, p3) {
     edgePositions[12] = p3.x; edgePositions[13] = p3.y; edgePositions[14] = p3.z;
     edgePositions[15] = p1.x; edgePositions[16] = p1.y; edgePositions[17] = p1.z;
     edges.geometry.attributes.position.needsUpdate = true;
+}
+
+// Create 3D arrow for real quaternion i,j,k visualization
+// Maps quaternion (w,x,y,z) to 3D space where i,j,k -> x,y,z
+function create3DArrow(position, color, size = 0.15) {
+    const group = new THREE.Group();
+
+    // Sphere at the position
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(size, 16, 16),
+        new THREE.MeshPhongMaterial({ color: color })
+    );
+    sphere.position.copy(position);
+    group.add(sphere);
+
+    // Line from origin to position
+    const lineGeometry = new THREE.BufferGeometry();
+    const linePositions = new Float32Array(6);
+    linePositions[0] = 0; linePositions[1] = 0; linePositions[2] = 0;
+    linePositions[3] = position.x; linePositions[4] = position.y; linePositions[5] = position.z;
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    const line = new THREE.Line(
+        lineGeometry,
+        new THREE.LineBasicMaterial({ color: color, linewidth: 3 })
+    );
+    group.add(line);
+
+    // Arrow head (cone)
+    if (position.length() > 0.1) {
+        const arrowLength = 0.2;
+        const arrow = new THREE.Mesh(
+            new THREE.ConeGeometry(0.08, arrowLength, 8),
+            new THREE.MeshPhongMaterial({ color: color })
+        );
+        // Position arrow at the end of the line
+        const dir = position.clone().normalize();
+        arrow.position.copy(position).sub(dir.multiplyScalar(arrowLength / 2));
+        // Rotate arrow to point in direction
+        arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), position.clone().normalize());
+        group.add(arrow);
+    }
+
+    return group;
+}
+
+// Update 3D arrow position
+function update3DArrow(arrowGroup, position) {
+    if (!arrowGroup) return;
+
+    // Update sphere position
+    arrowGroup.children[0].position.copy(position);
+
+    // Update line
+    const line = arrowGroup.children[1];
+    const posArray = line.geometry.attributes.position.array;
+    posArray[3] = position.x;
+    posArray[4] = position.y;
+    posArray[5] = position.z;
+    line.geometry.attributes.position.needsUpdate = true;
+
+    // Update arrow head if exists
+    if (arrowGroup.children.length > 2 && position.length() > 0.1) {
+        const arrow = arrowGroup.children[2];
+        const arrowLength = 0.2;
+        const dir = position.clone().normalize();
+        arrow.position.copy(position).sub(dir.multiplyScalar(arrowLength / 2));
+        arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        arrow.visible = true;
+    } else if (arrowGroup.children.length > 2) {
+        arrowGroup.children[2].visible = false;
+    }
+}
+
+// Update 3D rotation visualization (for real quaternion mode)
+function update3DRotationVisualization() {
+    if (!realQuaternionMode || !show3DRotation) {
+        // Hide arrows if not in real quaternion mode or 3D rotation is off
+        if (rotation3DObjects.vArrow) {
+            scene.remove(rotation3DObjects.vArrow);
+            rotation3DObjects.vArrow = null;
+        }
+        if (rotation3DObjects.resultArrow) {
+            scene.remove(rotation3DObjects.resultArrow);
+            rotation3DObjects.resultArrow = null;
+        }
+        return;
+    }
+
+    // Calculate the quaternion results
+    const result = calculateRealQVQResult();
+
+    // V's i,j,k components as 3D position (V is a pure quaternion, so w=0)
+    // V = (0, vx, vy, 0) in quaternion, so 3D position is (vx, vy, 0)
+    const v3D = new THREE.Vector3(result.V.x, result.V.y, result.V.z);
+
+    // QVQ^-1 result's i,j,k components as 3D position
+    // The result should also be a pure quaternion (w≈0 for rotation)
+    const result3D = new THREE.Vector3(result.QVQInv.x, result.QVQInv.y, result.QVQInv.z);
+
+    console.log('3D Rotation Visualization:');
+    console.log('  V (i,j,k):', v3D);
+    console.log('  QVQ^-1 (i,j,k):', result3D);
+    console.log('  V length:', v3D.length().toFixed(3));
+    console.log('  Result length:', result3D.length().toFixed(3));
+
+    // Create or update V arrow (orange)
+    if (!rotation3DObjects.vArrow) {
+        rotation3DObjects.vArrow = create3DArrow(v3D, 0xff6600, 0.12);
+        scene.add(rotation3DObjects.vArrow);
+    } else {
+        update3DArrow(rotation3DObjects.vArrow, v3D);
+    }
+
+    // Create or update result arrow (green) - only if showFinalResult is true
+    if (showFinalResult) {
+        if (!rotation3DObjects.resultArrow) {
+            rotation3DObjects.resultArrow = create3DArrow(result3D, 0x00ff00, 0.15);
+            scene.add(rotation3DObjects.resultArrow);
+        } else {
+            update3DArrow(rotation3DObjects.resultArrow, result3D);
+        }
+    } else {
+        if (rotation3DObjects.resultArrow) {
+            scene.remove(rotation3DObjects.resultArrow);
+            rotation3DObjects.resultArrow = null;
+        }
+    }
 }
 
 // Update angle display in UI
@@ -860,6 +994,7 @@ function initRealQuaternionObjects() {
 function updateVisualization() {
     initObjects();
     updateAngleDisplay();
+    update3DRotationVisualization();
 }
 
 // UI Controls
@@ -919,6 +1054,19 @@ realQuaternionModeCheckbox.addEventListener('change', (e) => {
         realInfo.style.display = realQuaternionMode ? 'block' : 'none';
     }
 
+    // Toggle 3D rotation checkbox visibility
+    const show3DRotationGroup = document.getElementById('show-3d-rotation-group');
+    if (show3DRotationGroup) {
+        show3DRotationGroup.style.display = realQuaternionMode ? 'block' : 'none';
+        // Reset 3D rotation when switching modes
+        if (!realQuaternionMode) {
+            show3DRotation = false;
+            const checkbox = document.getElementById('show-3d-rotation');
+            if (checkbox) checkbox.checked = false;
+            update3DRotationVisualization();
+        }
+    }
+
     // Update angle labels
     const label1 = document.getElementById('angle-label-1');
     const label2 = document.getElementById('angle-label-2');
@@ -936,6 +1084,21 @@ realQuaternionModeCheckbox.addEventListener('change', (e) => {
     }
 
     updateVisualization();
+});
+
+// 3D Rotation checkbox (only visible in real quaternion mode)
+const show3DRotationCheckbox = document.getElementById('show-3d-rotation');
+show3DRotationCheckbox.addEventListener('change', (e) => {
+    show3DRotation = e.target.checked;
+    console.log('Show 3D Rotation:', show3DRotation ? 'ON' : 'OFF');
+
+    // Toggle 3D rotation info
+    const rotationInfo = document.getElementById('3d-rotation-info');
+    if (rotationInfo) {
+        rotationInfo.style.display = show3DRotation ? 'block' : 'none';
+    }
+
+    update3DRotationVisualization();
 });
 
 // Show final result checkbox

@@ -120,6 +120,13 @@
             </label>
         </div>
 
+        <div class="control-group" id="show-3d-rotation-group" style="display: none;">
+            <label>
+                <input type="checkbox" id="show-3d-rotation" style="width: auto; margin-right: 5px;">
+                Show 3D Rotation (i,j,k → x,y,z)
+            </label>
+        </div>
+
         <div class="control-group">
             <label>
                 <input type="checkbox" id="show-final-result" style="width: auto; margin-right: 5px;">
@@ -144,6 +151,13 @@
             <p><strong>Q = cos(θ/2) + sin(θ/2)·D</strong></p>
             <p>축 매핑: z=real, x=i, y=j</p>
             <p>V는 순수 quaternion (w=0)</p>
+        </div>
+        <div id="3d-rotation-info" style="display: none;">
+            <p style="margin-top: 10px; border-top: 1px solid #444; padding-top: 10px;">
+                <strong>3D 회전 화살표:</strong></p>
+            <p>i,j,k 성분을 실제 3D 좌표(x,y,z)로 표시</p>
+            <p style="color: #ff6600;">● V의 3D 위치</p>
+            <p style="color: #00ff00;">● QVQ⁻¹ 결과의 3D 위치</p>
         </div>
         <p style="margin-top: 10px; font-size: 11px;">마우스로 시점을 회전/확대/이동</p>
     </div>
