@@ -1245,16 +1245,18 @@ function animateRealQV() {
 
     // 3D rotation arrow visualization (if enabled)
     // Shows V's (i,j,k) -> QV's (i,j,k) as actual 3D coordinates (x,y,z)
-    // This reveals how k component appears during QV multiplication!
+    // Key insight: V is a pure quaternion (w=0), but QV has w≠0!
     const v3DPos = result.V.to3DPosition();  // V = (0, vx, vy, 0) -> (vx, vy, 0)
-    const qv3DPos = result.QV.to3DPosition(); // QV has k component!
+    const qv3DPos = result.QV.to3DPosition(); // QV's imaginary part
     let arrow3DGroup = null;
 
     if (show3DRotation) {
         console.log('=== 3D 회전 관찰 (i,j,k → x,y,z) ===');
-        console.log('V의 3D 위치 (k=0):', v3DPos);
-        console.log('QV의 3D 위치 (k 성분 생성!):', qv3DPos);
-        console.log('k 성분 변화: 0 →', result.QV.z.toFixed(4));
+        console.log('V는 순수 쿼터니언 (w=0):', result.V.toString());
+        console.log('V의 3D 위치:', v3DPos);
+        console.log('QV는 순수 쿼터니언이 아님 (w≠0):', result.QV.toString());
+        console.log('QV의 3D 위치:', qv3DPos);
+        console.log('실수 성분(w) 변화: 0 →', result.QV.w.toFixed(4));
 
         // Create 3D arrow starting at V's 3D position (orange color)
         arrow3DGroup = create3DArrow(v3DPos, 0xff6600, 0.12);
@@ -1318,7 +1320,8 @@ function animateRealQV() {
             // Update triangle: (identity, origin, Q) -> (V, origin, QV)
             updateTriangle(triangleGroup, interpolatedIdentity, origin, interpolatedQV);
 
-            // Update 3D arrow: V's 3D position -> QV's 3D position (shows k component appearing!)
+            // Update 3D arrow: V's 3D position -> QV's 3D position
+            // (V is pure quaternion w=0, but QV has w≠0!)
             if (arrow3DGroup) {
                 const interpolated3D = new THREE.Vector3();
                 interpolated3D.lerpVectors(v3DPos, qv3DPos, phaseEased);
@@ -1361,7 +1364,8 @@ function animateRealQV() {
             console.log('1 -> V:', vPos);
             if (show3DRotation) {
                 console.log('3D 위치 변화: V', v3DPos, '-> QV', qv3DPos);
-                console.log('k 성분이 0에서', result.QV.z.toFixed(4), '로 변화!');
+                console.log('실수 성분(w)이 0에서', result.QV.w.toFixed(4), '로 변화!');
+                console.log('(V는 순수 쿼터니언이었지만 QV는 아님)');
             }
         }
     }
@@ -1763,18 +1767,21 @@ function animateRealQVQ() {
 
     // 3D rotation arrow visualization (if enabled)
     // Shows transformation: V's (i,j,k) -> QV's (i,j,k) -> QVQ^-1's (i,j,k)
-    // Key insight: k component appears in QV but returns to 0 in QVQ^-1!
-    const v3DPos = result.V.to3DPosition();       // (vx, vy, 0) - no k
-    const qv3DPos = result.QV.to3DPosition();     // k component appears!
-    const final3DPos = result.QVQInv.to3DPosition(); // k returns to ~0 (pure rotation)
+    // Key insight: V is pure quaternion (w=0), QV has w≠0, but QVQ^-1 returns to w=0!
+    const v3DPos = result.V.to3DPosition();       // V's imaginary part (w=0)
+    const qv3DPos = result.QV.to3DPosition();     // QV's imaginary part (w≠0!)
+    const final3DPos = result.QVQInv.to3DPosition(); // Final's imaginary part (w≈0, pure rotation)
     let arrow3DGroup = null;
 
     if (show3DRotation) {
         console.log('=== 3D 회전 관찰 (i,j,k → x,y,z) ===');
-        console.log('V의 3D 위치 (k=0):', v3DPos);
-        console.log('QV의 3D 위치 (k 성분 생성!):', qv3DPos);
-        console.log('QVQ^-1의 3D 위치 (k ≈ 0):', final3DPos);
-        console.log('k 성분 변화: 0 →', result.QV.z.toFixed(4), '→', result.QVQInv.z.toFixed(4));
+        console.log('V (순수 쿼터니언, w=0):', result.V.toString());
+        console.log('V의 3D 위치:', v3DPos);
+        console.log('QV (w≠0, 순수 쿼터니언 아님!):', result.QV.toString());
+        console.log('QV의 3D 위치:', qv3DPos);
+        console.log('QVQ^-1 (w≈0, 다시 순수 쿼터니언!):', result.QVQInv.toString());
+        console.log('QVQ^-1의 3D 위치:', final3DPos);
+        console.log('실수 성분(w) 변화: 0 →', result.QV.w.toFixed(4), '→', result.QVQInv.w.toFixed(4));
 
         // Create 3D arrow starting at V's 3D position (orange -> green color transition)
         arrow3DGroup = create3DArrow(v3DPos, 0xff6600, 0.12);
@@ -1840,7 +1847,8 @@ function animateRealQVQ() {
             // Update triangle1: (identity, origin, Q) -> (V, origin, QV)
             updateTriangle(triangle1, interpolatedIdentity, origin, interpolatedQV);
 
-            // Update 3D arrow: V's 3D -> QV's 3D (k component appearing!)
+            // Update 3D arrow: V's 3D -> QV's 3D
+            // (V is pure quaternion w=0, but QV has w≠0!)
             if (arrow3DGroup) {
                 const interpolated3D = new THREE.Vector3();
                 interpolated3D.lerpVectors(v3DPos, qv3DPos, phaseEased);
@@ -1882,7 +1890,8 @@ function animateRealQVQ() {
             // Update triangle2: (NEW identity, origin, QV) -> (Q^-1, origin, Final)
             updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinal);
 
-            // Update 3D arrow: QV's 3D -> Final's 3D (k component returning to ~0!)
+            // Update 3D arrow: QV's 3D -> Final's 3D
+            // (QV has w≠0, but QVQ^-1 returns to w≈0 - pure quaternion again!)
             if (arrow3DGroup) {
                 const interpolated3D = new THREE.Vector3();
                 interpolated3D.lerpVectors(qv3DPos, final3DPos, phaseEased);
@@ -1942,10 +1951,10 @@ function animateRealQVQ() {
             console.log('Final visual position:', finalPos);
             if (show3DRotation) {
                 console.log('=== 3D 회전 결과 ===');
-                console.log('V 3D:', v3DPos, '(k=0)');
-                console.log('QV 3D:', qv3DPos, '(k=', result.QV.z.toFixed(4), ')');
-                console.log('Final 3D:', final3DPos, '(k≈', result.QVQInv.z.toFixed(4), ')');
-                console.log('순수 회전 확인: k 성분이 0에 가까워야 함');
+                console.log('V 3D:', v3DPos, '(w=0, 순수 쿼터니언)');
+                console.log('QV 3D:', qv3DPos, '(w=', result.QV.w.toFixed(4), ', 순수 쿼터니언 아님!)');
+                console.log('Final 3D:', final3DPos, '(w≈', result.QVQInv.w.toFixed(4), ', 다시 순수 쿼터니언!)');
+                console.log('순수 회전 확인: 실수 성분(w)이 0에 가까워야 함');
             }
         }
     }
