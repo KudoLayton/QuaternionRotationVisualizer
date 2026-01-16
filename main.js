@@ -1527,6 +1527,24 @@ function animateRealQVQ() {
     triangle2.visible = false;
     scene.add(triangle2);
 
+    // Create NEW identity visualization for second transformation (identity -> Q^-1)
+    const newIdentityGroup = new THREE.Group();
+    const newIdentitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.8 })
+    );
+    const newIdentityLineGeom = new THREE.BufferGeometry();
+    const newIdentityLinePos = new Float32Array(6);
+    newIdentityLineGeom.setAttribute('position', new THREE.BufferAttribute(newIdentityLinePos, 3));
+    const newIdentityLine = new THREE.Line(
+        newIdentityLineGeom,
+        new THREE.LineDashedMaterial({ color: 0xaaaaaa, linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    newIdentityGroup.add(newIdentitySphere);
+    newIdentityGroup.add(newIdentityLine);
+    newIdentityGroup.visible = false;
+    scene.add(newIdentityGroup);
+
     const duration = 6000;
     const startTime = Date.now();
 
@@ -1608,19 +1626,17 @@ function animateRealQVQ() {
             updateLineGeometry(objects.finalResult.children[1], interpolatedFinal);
             // Color stays orange - no change
 
-            // First identity continues: V -> Q^(-1) - color stays yellow (no scale change, only direction)
-            objects.transformedIdentity.visible = true;
-            const interpolatedIdentity2 = new THREE.Vector3();
-            interpolatedIdentity2.lerpVectors(vPos, qInvPos, phaseEased);
-            objects.transformedIdentity.children[0].position.copy(interpolatedIdentity2);
-            updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity2);
-            // Keep yellow color - no change (only direction changes, not scale)
-            updateColor(objects.transformedIdentity, colorIdentityEnd);
+            // Hide first identity (which ended at V), show NEW identity for second transformation
+            objects.transformedIdentity.visible = false;
 
-            // Update triangle2: (NEW identity, origin, QV) -> (Q^-1, origin, Final)
-            // The NEW identity transforms from identityPos to Q^-1
+            // Animate NEW identity (identityPos -> Q^(-1)) - starts gray, stays gray (no scale change)
+            newIdentityGroup.visible = true;
             const interpolatedNewIdentity = new THREE.Vector3();
             interpolatedNewIdentity.lerpVectors(identityPos, qInvPos, phaseEased);
+            newIdentityGroup.children[0].position.copy(interpolatedNewIdentity);
+            updateLineGeometry(newIdentityGroup.children[1], interpolatedNewIdentity);
+
+            // Update triangle2: (NEW identity, origin, QV) -> (Q^-1, origin, Final)
             updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinal);
         } else {
             // Phase 4: Show final result
@@ -1629,11 +1645,11 @@ function animateRealQVQ() {
             objects.finalResult.children[0].position.copy(finalPos);
             updateLineGeometry(objects.finalResult.children[1], finalPos);
 
-            // Show identity at Q^-1 position with yellow color
-            objects.transformedIdentity.visible = true;
-            objects.transformedIdentity.children[0].position.copy(qInvPos);
-            updateLineGeometry(objects.transformedIdentity.children[1], qInvPos);
-            updateColor(objects.transformedIdentity, colorIdentityEnd);
+            // Hide first identity, show NEW identity at Q^-1 position (gray)
+            objects.transformedIdentity.visible = false;
+            newIdentityGroup.visible = true;
+            newIdentityGroup.children[0].position.copy(qInvPos);
+            updateLineGeometry(newIdentityGroup.children[1], qInvPos);
 
             // Show final triangle2 at (Q^-1, origin, Final)
             triangle1.visible = false;
@@ -1645,9 +1661,10 @@ function animateRealQVQ() {
             requestAnimationFrame(animate);
         } else {
             isAnimating = false;
-            // Clean up triangles
+            // Clean up triangles and new identity
             scene.remove(triangle1);
             scene.remove(triangle2);
+            scene.remove(newIdentityGroup);
             console.log('Real QVQ^(-1) animation complete');
             console.log('Final position:', result.QVQInv.toString());
             console.log('Final visual position:', finalPos);
@@ -1880,6 +1897,24 @@ function animatePseudoQVQ() {
     triangle2.visible = false;
     scene.add(triangle2);
 
+    // Create NEW identity visualization for second transformation (z-axis -> Q^-1)
+    const newIdentityGroup = new THREE.Group();
+    const newIdentitySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshPhongMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 })
+    );
+    const newIdentityLineGeom = new THREE.BufferGeometry();
+    const newIdentityLinePos = new Float32Array(6);
+    newIdentityLineGeom.setAttribute('position', new THREE.BufferAttribute(newIdentityLinePos, 3));
+    const newIdentityLine = new THREE.Line(
+        newIdentityLineGeom,
+        new THREE.LineDashedMaterial({ color: 0x00ff00, linewidth: 2, dashSize: 0.1, gapSize: 0.05 })
+    );
+    newIdentityGroup.add(newIdentitySphere);
+    newIdentityGroup.add(newIdentityLine);
+    newIdentityGroup.visible = false;
+    scene.add(newIdentityGroup);
+
     const duration = 6000; // 6 seconds
     const startTime = Date.now();
 
@@ -2057,21 +2092,20 @@ function animatePseudoQVQ() {
             updateLineGeometryPseudo(objects.finalResult.children[1], interpolatedFinalPos);
             // Color stays orange - no scale change, only direction
 
-            // Animate identity (V -> Q^(-1)) - color stays yellow (no scale change)
-            // Note: This is the FIRST identity element continuing its transformation
-            const interpolatedIdentityPos2 = new THREE.Vector3();
-            interpolatedIdentityPos2.lerpVectors(vPos, qInvPos, phaseEased);
-            objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos2);
-            updateLineGeometryPseudo(objects.transformedIdentity.children[1], interpolatedIdentityPos2);
-            updateColorPseudo(objects.transformedIdentity, colorIdentityEnd); // Keep yellow
+            // Hide first identity (which ended at V), show NEW identity for second transformation
+            objects.transformedIdentity.visible = false;
+
+            // Animate NEW identity (z-axis -> Q^(-1)) - starts green, stays green (no scale change)
+            newIdentityGroup.visible = true;
+            const interpolatedNewIdentity = new THREE.Vector3();
+            interpolatedNewIdentity.lerpVectors(zAxis, qInvPos, phaseEased);
+            newIdentityGroup.children[0].position.copy(interpolatedNewIdentity);
+            updateLineGeometryPseudo(newIdentityGroup.children[1], interpolatedNewIdentity);
 
             // Update triangles: hide triangle1, show and animate triangle2
             triangle1.visible = false;
             triangle2.visible = true;
             // Triangle2: (NEW identity/z-axis, origin, _Q) -> (Q^-1, origin, Final)
-            // The NEW identity transforms from z-axis to Q^-1
-            const interpolatedNewIdentity = new THREE.Vector3();
-            interpolatedNewIdentity.lerpVectors(zAxis, qInvPos, phaseEased);
             updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinalPos);
         } else {
             // Phase 4: Show final result
@@ -2083,7 +2117,7 @@ function animatePseudoQVQ() {
             newZAxisGroup.visible = false;
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = false; // Hide projection in final phase
-            objects.transformedIdentity.visible = true;
+            objects.transformedIdentity.visible = false; // Hide first identity
 
             // Show final triangle2 at (Q^-1, origin, Final)
             triangle1.visible = false;
@@ -2103,10 +2137,10 @@ function animatePseudoQVQ() {
             objects.finalResult.children[0].position.copy(finalPos);
             updateLineGeometryPseudo(objects.finalResult.children[1], finalPos);
 
-            // Show identity at Q^(-1) position with yellow color
-            objects.transformedIdentity.children[0].position.copy(qInvPos);
-            updateLineGeometryPseudo(objects.transformedIdentity.children[1], qInvPos);
-            updateColorPseudo(objects.transformedIdentity, colorIdentityEnd); // Keep yellow
+            // Show NEW identity at Q^(-1) position (green)
+            newIdentityGroup.visible = true;
+            newIdentityGroup.children[0].position.copy(qInvPos);
+            updateLineGeometryPseudo(newIdentityGroup.children[1], qInvPos);
         }
 
         if (t < 1) {
@@ -2119,6 +2153,7 @@ function animatePseudoQVQ() {
             scene.remove(transformedQProjectionGroup);
             scene.remove(triangle1);
             scene.remove(triangle2);
+            scene.remove(newIdentityGroup);
             console.log('QVQ^(-1) animation complete');
             console.log('Final position:', finalPos);
         }
