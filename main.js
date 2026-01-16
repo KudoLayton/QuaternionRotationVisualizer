@@ -1521,8 +1521,9 @@ function animateRealQVQ() {
     // Triangle 1: (identity, origin, Q) - for first transformation (QV)
     const triangle1 = createTriangle(identityPos, origin, qPos, 0x00ffff, 0.25);
     scene.add(triangle1);
-    // Triangle 2: (V, origin, QV) - for second transformation (×Q^-1)
-    const triangle2 = createTriangle(vPos, origin, qvPos, 0xff6600, 0.25);
+    // Triangle 2: (NEW identity, origin, QV) - for second transformation (×Q^-1)
+    // Note: Second multiplication uses a NEW identity element, not the transformed one (V)
+    const triangle2 = createTriangle(identityPos, origin, qvPos, 0xff6600, 0.25);
     triangle2.visible = false;
     scene.add(triangle2);
 
@@ -1607,7 +1608,7 @@ function animateRealQVQ() {
             updateLineGeometry(objects.finalResult.children[1], interpolatedFinal);
             // Color stays orange - no change
 
-            // 1 -> Q^(-1) - color stays yellow (no scale change, only direction)
+            // First identity continues: V -> Q^(-1) - color stays yellow (no scale change, only direction)
             objects.transformedIdentity.visible = true;
             const interpolatedIdentity2 = new THREE.Vector3();
             interpolatedIdentity2.lerpVectors(vPos, qInvPos, phaseEased);
@@ -1616,8 +1617,11 @@ function animateRealQVQ() {
             // Keep yellow color - no change (only direction changes, not scale)
             updateColor(objects.transformedIdentity, colorIdentityEnd);
 
-            // Update triangle2: (V, origin, QV) -> (Q^-1, origin, Final)
-            updateTriangle(triangle2, interpolatedIdentity2, origin, interpolatedFinal);
+            // Update triangle2: (NEW identity, origin, QV) -> (Q^-1, origin, Final)
+            // The NEW identity transforms from identityPos to Q^-1
+            const interpolatedNewIdentity = new THREE.Vector3();
+            interpolatedNewIdentity.lerpVectors(identityPos, qInvPos, phaseEased);
+            updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinal);
         } else {
             // Phase 4: Show final result
             objects.transformedQ.visible = false;
@@ -1870,8 +1874,9 @@ function animatePseudoQVQ() {
     // Triangle 1: (identity/z-axis, origin, Q) - for first transformation (QV)
     const triangle1 = createTriangle(zAxis, origin, qPos, 0x00ffff, 0.25);
     scene.add(triangle1);
-    // Triangle 2: (V, origin, _Q) - for second transformation (×Q^-1)
-    const triangle2 = createTriangle(vPos, origin, transformedQPos, 0xff6600, 0.25);
+    // Triangle 2: (NEW identity/z-axis, origin, _Q) - for second transformation (×Q^-1)
+    // Note: Second multiplication uses a NEW identity element, not the transformed one (V)
+    const triangle2 = createTriangle(zAxis, origin, transformedQPos, 0xff6600, 0.25);
     triangle2.visible = false;
     scene.add(triangle2);
 
@@ -2053,6 +2058,7 @@ function animatePseudoQVQ() {
             // Color stays orange - no scale change, only direction
 
             // Animate identity (V -> Q^(-1)) - color stays yellow (no scale change)
+            // Note: This is the FIRST identity element continuing its transformation
             const interpolatedIdentityPos2 = new THREE.Vector3();
             interpolatedIdentityPos2.lerpVectors(vPos, qInvPos, phaseEased);
             objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos2);
@@ -2062,8 +2068,11 @@ function animatePseudoQVQ() {
             // Update triangles: hide triangle1, show and animate triangle2
             triangle1.visible = false;
             triangle2.visible = true;
-            // Triangle2: (V, origin, _Q) -> (Q^-1, origin, Final)
-            updateTriangle(triangle2, interpolatedIdentityPos2, origin, interpolatedFinalPos);
+            // Triangle2: (NEW identity/z-axis, origin, _Q) -> (Q^-1, origin, Final)
+            // The NEW identity transforms from z-axis to Q^-1
+            const interpolatedNewIdentity = new THREE.Vector3();
+            interpolatedNewIdentity.lerpVectors(zAxis, qInvPos, phaseEased);
+            updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinalPos);
         } else {
             // Phase 4: Show final result
             console.log('Phase 4: 최종 결과');
