@@ -681,6 +681,21 @@ class Quat {
     toString() {
         return `(${this.w.toFixed(3)} + ${this.x.toFixed(3)}i + ${this.y.toFixed(3)}j + ${this.z.toFixed(3)}k)`;
     }
+
+    // Get 3D position for actual 3D rotation (i,j,k -> x,y,z)
+    to3DPosition() {
+        return new THREE.Vector3(this.x, this.y, this.z);
+    }
+
+    // Linear interpolation between two quaternions
+    static lerp(q1, q2, t) {
+        return new Quat(
+            q1.w + (q2.w - q1.w) * t,
+            q1.x + (q2.x - q1.x) * t,
+            q1.y + (q2.y - q1.y) * t,
+            q1.z + (q2.z - q1.z) * t
+        );
+    }
 }
 
 // Create rotation quaternion Q = cos(θ/2) + sin(θ/2)·(xi + yj + zk)
@@ -1228,6 +1243,24 @@ function animateRealQV() {
     const triangleGroup = createTriangle(identityPos, origin, qPos, 0x00ffff, 0.25);
     scene.add(triangleGroup);
 
+    // 3D rotation arrow visualization (if enabled)
+    // Shows V's (i,j,k) -> QV's (i,j,k) as actual 3D coordinates (x,y,z)
+    // This reveals how k component appears during QV multiplication!
+    const v3DPos = result.V.to3DPosition();  // V = (0, vx, vy, 0) -> (vx, vy, 0)
+    const qv3DPos = result.QV.to3DPosition(); // QV has k component!
+    let arrow3DGroup = null;
+
+    if (show3DRotation) {
+        console.log('=== 3D 회전 관찰 (i,j,k → x,y,z) ===');
+        console.log('V의 3D 위치 (k=0):', v3DPos);
+        console.log('QV의 3D 위치 (k 성분 생성!):', qv3DPos);
+        console.log('k 성분 변화: 0 →', result.QV.z.toFixed(4));
+
+        // Create 3D arrow starting at V's 3D position (orange color)
+        arrow3DGroup = create3DArrow(v3DPos, 0xff6600, 0.12);
+        scene.add(arrow3DGroup);
+    }
+
     const duration = 3000;
     const startTime = Date.now();
 
@@ -1284,6 +1317,13 @@ function animateRealQV() {
 
             // Update triangle: (identity, origin, Q) -> (V, origin, QV)
             updateTriangle(triangleGroup, interpolatedIdentity, origin, interpolatedQV);
+
+            // Update 3D arrow: V's 3D position -> QV's 3D position (shows k component appearing!)
+            if (arrow3DGroup) {
+                const interpolated3D = new THREE.Vector3();
+                interpolated3D.lerpVectors(v3DPos, qv3DPos, phaseEased);
+                update3DArrow(arrow3DGroup, interpolated3D);
+            }
         } else {
             // Phase 3: Show final state with final colors
             objects.transformedQ.visible = true;
@@ -1299,6 +1339,11 @@ function animateRealQV() {
             // Show final triangle
             triangleGroup.visible = true;
             updateTriangle(triangleGroup, vPos, origin, qvPos);
+
+            // Show 3D arrow at QV's 3D position
+            if (arrow3DGroup) {
+                update3DArrow(arrow3DGroup, qv3DPos);
+            }
         }
 
         if (t < 1) {
@@ -1307,9 +1352,17 @@ function animateRealQV() {
             isAnimating = false;
             // Clean up triangle
             scene.remove(triangleGroup);
+            // Clean up 3D arrow
+            if (arrow3DGroup) {
+                scene.remove(arrow3DGroup);
+            }
             console.log('Real QV animation complete');
             console.log('Q -> QV:', qvPos);
             console.log('1 -> V:', vPos);
+            if (show3DRotation) {
+                console.log('3D 위치 변화: V', v3DPos, '-> QV', qv3DPos);
+                console.log('k 성분이 0에서', result.QV.z.toFixed(4), '로 변화!');
+            }
         }
     }
 
@@ -1708,6 +1761,26 @@ function animateRealQVQ() {
     newIdentityGroup.visible = false;
     scene.add(newIdentityGroup);
 
+    // 3D rotation arrow visualization (if enabled)
+    // Shows transformation: V's (i,j,k) -> QV's (i,j,k) -> QVQ^-1's (i,j,k)
+    // Key insight: k component appears in QV but returns to 0 in QVQ^-1!
+    const v3DPos = result.V.to3DPosition();       // (vx, vy, 0) - no k
+    const qv3DPos = result.QV.to3DPosition();     // k component appears!
+    const final3DPos = result.QVQInv.to3DPosition(); // k returns to ~0 (pure rotation)
+    let arrow3DGroup = null;
+
+    if (show3DRotation) {
+        console.log('=== 3D 회전 관찰 (i,j,k → x,y,z) ===');
+        console.log('V의 3D 위치 (k=0):', v3DPos);
+        console.log('QV의 3D 위치 (k 성분 생성!):', qv3DPos);
+        console.log('QVQ^-1의 3D 위치 (k ≈ 0):', final3DPos);
+        console.log('k 성분 변화: 0 →', result.QV.z.toFixed(4), '→', result.QVQInv.z.toFixed(4));
+
+        // Create 3D arrow starting at V's 3D position (orange -> green color transition)
+        arrow3DGroup = create3DArrow(v3DPos, 0xff6600, 0.12);
+        scene.add(arrow3DGroup);
+    }
+
     const duration = 6000;
     const startTime = Date.now();
 
@@ -1766,6 +1839,13 @@ function animateRealQVQ() {
 
             // Update triangle1: (identity, origin, Q) -> (V, origin, QV)
             updateTriangle(triangle1, interpolatedIdentity, origin, interpolatedQV);
+
+            // Update 3D arrow: V's 3D -> QV's 3D (k component appearing!)
+            if (arrow3DGroup) {
+                const interpolated3D = new THREE.Vector3();
+                interpolated3D.lerpVectors(v3DPos, qv3DPos, phaseEased);
+                update3DArrow(arrow3DGroup, interpolated3D);
+            }
         } else if (t < 0.75) {
             // Phase 3: Animate QV -> Final and 1 -> Q^(-1) (NO color change - only direction changes)
             const phaseT = (t - 0.45) / 0.30;
@@ -1801,6 +1881,20 @@ function animateRealQVQ() {
 
             // Update triangle2: (NEW identity, origin, QV) -> (Q^-1, origin, Final)
             updateTriangle(triangle2, interpolatedNewIdentity, origin, interpolatedFinal);
+
+            // Update 3D arrow: QV's 3D -> Final's 3D (k component returning to ~0!)
+            if (arrow3DGroup) {
+                const interpolated3D = new THREE.Vector3();
+                interpolated3D.lerpVectors(qv3DPos, final3DPos, phaseEased);
+                update3DArrow(arrow3DGroup, interpolated3D);
+                // Change color from orange to green as we approach final position
+                const arrowColor = new THREE.Color(0xff6600).lerp(new THREE.Color(0x00ff00), phaseEased);
+                arrow3DGroup.children[0].material.color.copy(arrowColor);
+                arrow3DGroup.children[1].material.color.copy(arrowColor);
+                if (arrow3DGroup.children.length > 2) {
+                    arrow3DGroup.children[2].material.color.copy(arrowColor);
+                }
+            }
         } else {
             // Phase 4: Show final result
             objects.transformedQ.visible = false;
@@ -1818,6 +1912,17 @@ function animateRealQVQ() {
             triangle1.visible = false;
             triangle2.visible = true;
             updateTriangle(triangle2, qInvPos, origin, finalPos);
+
+            // Show 3D arrow at final position (green color)
+            if (arrow3DGroup) {
+                update3DArrow(arrow3DGroup, final3DPos);
+                const greenColor = new THREE.Color(0x00ff00);
+                arrow3DGroup.children[0].material.color.copy(greenColor);
+                arrow3DGroup.children[1].material.color.copy(greenColor);
+                if (arrow3DGroup.children.length > 2) {
+                    arrow3DGroup.children[2].material.color.copy(greenColor);
+                }
+            }
         }
 
         if (t < 1) {
@@ -1828,9 +1933,20 @@ function animateRealQVQ() {
             scene.remove(triangle1);
             scene.remove(triangle2);
             scene.remove(newIdentityGroup);
+            // Clean up 3D arrow
+            if (arrow3DGroup) {
+                scene.remove(arrow3DGroup);
+            }
             console.log('Real QVQ^(-1) animation complete');
             console.log('Final position:', result.QVQInv.toString());
             console.log('Final visual position:', finalPos);
+            if (show3DRotation) {
+                console.log('=== 3D 회전 결과 ===');
+                console.log('V 3D:', v3DPos, '(k=0)');
+                console.log('QV 3D:', qv3DPos, '(k=', result.QV.z.toFixed(4), ')');
+                console.log('Final 3D:', final3DPos, '(k≈', result.QVQInv.z.toFixed(4), ')');
+                console.log('순수 회전 확인: k 성분이 0에 가까워야 함');
+            }
         }
     }
 

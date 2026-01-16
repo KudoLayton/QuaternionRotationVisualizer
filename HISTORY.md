@@ -131,3 +131,57 @@ a × b 연산:
 - 색상 애니메이션으로 시각적 확인 가능:
   - QV: 스케일 변화 (색상 변함)
   - ×Q⁻¹: 방향만 변화 (색상 유지)
+
+---
+
+## v2.3 - 3D 회전 화살표 시각화
+
+### 3D Rotation Arrow Visualization
+Real Quaternion 모드에서 i,j,k 성분을 실제 3D 좌표(x,y,z)로 시각화
+
+### 추가된 UI
+- **Show 3D Rotation (i,j,k → x,y,z)** 체크박스 (Real 모드에서만 표시)
+- 정보 패널에 3D 화살표 설명 추가
+
+### 구현 내용
+```javascript
+function create3DArrow(position, color, size)
+function update3DArrow(arrowGroup, position)
+function update3DRotationVisualization()
+```
+
+### 화살표 색상
+- **주황색**: V의 3D 위치 (i,j,k → x,y,z)
+- **녹색**: QVQ⁻¹ 결과의 3D 위치
+
+---
+
+## v2.4 - 3D 화살표 애니메이션 및 k 성분 관찰
+
+### k 성분 변화 시각화
+QV 연산 시 Q와 V 모두 k 성분이 0이지만, 곱셈 결과 QV에서 k 성분이 생성됨!
+이 현상을 3D 화살표 애니메이션으로 관찰 가능
+
+### Quat 클래스 확장
+```javascript
+to3DPosition()       // i,j,k를 실제 3D 좌표(x,y,z)로 반환
+static lerp(q1, q2, t)  // 쿼터니언 선형 보간
+```
+
+### animateRealQV() 3D 애니메이션
+- V의 3D 위치 (k=0) → QV의 3D 위치 (k 성분 생성!)
+- 주황색 화살표로 표시
+- k 성분 변화를 console에 출력
+
+### animateRealQVQ() 3D 애니메이션
+- Phase 2: V → QV (k 성분 생성, 주황색)
+- Phase 3: QV → QVQ⁻¹ (k 성분 → 0으로 복귀, 주황→녹색)
+- 순수 회전의 특성: 최종 결과의 k 성분 ≈ 0
+
+### 핵심 통찰
+```
+V (k=0) → QV (k≠0) → QVQ⁻¹ (k≈0)
+```
+- QV 곱셈: k 성분이 없던 두 쿼터니언에서 k 성분 생성
+- ×Q⁻¹ 곱셈: k 성분이 다시 소멸
+- 이것이 바로 "순수 회전"의 수학적 증거!
