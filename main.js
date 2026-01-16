@@ -358,6 +358,77 @@ function createProjectionPoint(x, y, z, color = 0xffaa00) {
     return group;
 }
 
+// Create triangle visualization connecting three points
+function createTriangle(p1, p2, p3, color = 0x00ffff, opacity = 0.3) {
+    const group = new THREE.Group();
+
+    // Create filled triangle
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array([
+        p1.x, p1.y, p1.z,
+        p2.x, p2.y, p2.z,
+        p3.x, p3.y, p3.z
+    ]);
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    group.add(mesh);
+
+    // Create outline
+    const edgeGeometry = new THREE.BufferGeometry();
+    const edgeVertices = new Float32Array([
+        p1.x, p1.y, p1.z,
+        p2.x, p2.y, p2.z,
+        p2.x, p2.y, p2.z,
+        p3.x, p3.y, p3.z,
+        p3.x, p3.y, p3.z,
+        p1.x, p1.y, p1.z
+    ]);
+    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(edgeVertices, 3));
+
+    const edgeMaterial = new THREE.LineBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: opacity + 0.3,
+        linewidth: 2
+    });
+    const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    group.add(edges);
+
+    return group;
+}
+
+// Update triangle vertices dynamically
+function updateTriangle(triangleGroup, p1, p2, p3) {
+    // Update filled triangle
+    const mesh = triangleGroup.children[0];
+    const positions = mesh.geometry.attributes.position.array;
+    positions[0] = p1.x; positions[1] = p1.y; positions[2] = p1.z;
+    positions[3] = p2.x; positions[4] = p2.y; positions[5] = p2.z;
+    positions[6] = p3.x; positions[7] = p3.y; positions[8] = p3.z;
+    mesh.geometry.attributes.position.needsUpdate = true;
+    mesh.geometry.computeVertexNormals();
+
+    // Update edges
+    const edges = triangleGroup.children[1];
+    const edgePositions = edges.geometry.attributes.position.array;
+    edgePositions[0] = p1.x; edgePositions[1] = p1.y; edgePositions[2] = p1.z;
+    edgePositions[3] = p2.x; edgePositions[4] = p2.y; edgePositions[5] = p2.z;
+    edgePositions[6] = p2.x; edgePositions[7] = p2.y; edgePositions[8] = p2.z;
+    edgePositions[9] = p3.x; edgePositions[10] = p3.y; edgePositions[11] = p3.z;
+    edgePositions[12] = p3.x; edgePositions[13] = p3.y; edgePositions[14] = p3.z;
+    edgePositions[15] = p1.x; edgePositions[16] = p1.y; edgePositions[17] = p1.z;
+    edges.geometry.attributes.position.needsUpdate = true;
+}
+
 // Update angle display in UI
 function updateAngleDisplay() {
     const angleQQtElem = document.getElementById('angle-q-qt');
@@ -989,6 +1060,11 @@ function animateRealQV() {
     objects.transformedIdentity.visible = false;
     scene.add(objects.transformedIdentity);
 
+    // Create triangle (identity, origin, Q) for transformation visualization
+    const origin = new THREE.Vector3(0, 0, 0);
+    const triangleGroup = createTriangle(identityPos, origin, qPos, 0x00ffff, 0.25);
+    scene.add(triangleGroup);
+
     const duration = 3000;
     const startTime = Date.now();
 
@@ -1012,13 +1088,16 @@ function animateRealQV() {
         const t = Math.min(elapsed / duration, 1);
 
         if (t < 0.33) {
-            // Phase 1: Show initial state (1, Q, V)
+            // Phase 1: Show initial state (1, Q, V) with triangle
             objects.transformedQ.visible = false;
             objects.transformedIdentity.visible = false;
+            triangleGroup.visible = true;
         } else if (t < 0.67) {
             // Phase 2: Animate Q -> QV and 1 -> V simultaneously (with color change for scale)
             const phaseT = (t - 0.33) / 0.34;
             const phaseEased = phaseT < 0.5 ? 2 * phaseT * phaseT : 1 - Math.pow(-2 * phaseT + 2, 2) / 2;
+
+            triangleGroup.visible = true;
 
             // Q -> QV animation with color change (cyan -> orange)
             objects.transformedQ.visible = true;
@@ -1039,6 +1118,9 @@ function animateRealQV() {
             // Color interpolation for scale change
             const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
             updateColor(objects.transformedIdentity, currentColorIdentity);
+
+            // Update triangle: (identity, origin, Q) -> (V, origin, QV)
+            updateTriangle(triangleGroup, interpolatedIdentity, origin, interpolatedQV);
         } else {
             // Phase 3: Show final state with final colors
             objects.transformedQ.visible = true;
@@ -1050,12 +1132,18 @@ function animateRealQV() {
             objects.transformedIdentity.children[0].position.copy(vPos);
             updateLineGeometry(objects.transformedIdentity.children[1], vPos);
             updateColor(objects.transformedIdentity, colorIdentityEnd);
+
+            // Show final triangle
+            triangleGroup.visible = true;
+            updateTriangle(triangleGroup, vPos, origin, qvPos);
         }
 
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
             isAnimating = false;
+            // Clean up triangle
+            scene.remove(triangleGroup);
             console.log('Real QV animation complete');
             console.log('Q -> QV:', qvPos);
             console.log('1 -> V:', vPos);
@@ -1210,6 +1298,11 @@ function animatePseudoQV() {
     // V position for identity transformation target
     const vPos = new THREE.Vector3(params.vx, params.vy, 0);
 
+    // Create triangle (identity, origin, Q) for transformation visualization
+    const origin = new THREE.Vector3(0, 0, 0);
+    const triangleGroup = createTriangle(zAxis, origin, qPos, 0x00ffff, 0.25);
+    scene.add(triangleGroup);
+
     console.log('Q:', qPos);
     console.log('_Q (변환 후):', transformedQPos);
     console.log('색상 변화: 스케일이 변하므로 색상도 변함');
@@ -1241,16 +1334,18 @@ function animatePseudoQV() {
         const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
         if (t < 0.33) {
-            // Phase 1: Show initial state
+            // Phase 1: Show initial state with triangle
             objects.transformedAxes.visible = false;
             objects.transformedQ.visible = false;
             objects.transformedIdentity.visible = false;
+            triangleGroup.visible = true;
         } else if (t < 0.67) {
             // Phase 2: Transform coordinate system with color change
             const phaseT = (t - 0.33) / 0.34;
             const phaseEased = phaseT < 0.5 ? 2 * phaseT * phaseT : 1 - Math.pow(-2 * phaseT + 2, 2) / 2;
 
             objects.transformedAxes.visible = true;
+            triangleGroup.visible = true;
 
             // Extract position, rotation, scale from transformation matrix
             const targetPos = new THREE.Vector3();
@@ -1293,6 +1388,9 @@ function animatePseudoQV() {
             const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
             updateColor(objects.transformedIdentity, currentColorIdentity);
             objects.transformedIdentity.visible = true;
+
+            // Update triangle: (identity, origin, Q) -> (V, origin, _Q)
+            updateTriangle(triangleGroup, interpolatedIdentityPos, origin, interpolatedQPos);
         } else {
             // Phase 3: Show final result with final colors
             objects.transformedAxes.visible = true;
@@ -1303,12 +1401,18 @@ function animatePseudoQV() {
             objects.transformedIdentity.children[0].position.copy(vPos);
             updateLineGeometry(objects.transformedIdentity.children[1], vPos);
             updateColor(objects.transformedIdentity, colorIdentityEnd);
+
+            // Show final triangle
+            triangleGroup.visible = true;
+            updateTriangle(triangleGroup, vPos, origin, transformedQPos);
         }
 
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
             isAnimating = false;
+            // Clean up triangle
+            scene.remove(triangleGroup);
             console.log('QV animation complete');
             console.log('Transformed Q position:', transformedQPos);
         }
@@ -1412,6 +1516,16 @@ function animateRealQVQ() {
     objects.transformedIdentity.visible = false;
     scene.add(objects.transformedIdentity);
 
+    // Create triangles for transformation visualization
+    const origin = new THREE.Vector3(0, 0, 0);
+    // Triangle 1: (identity, origin, Q) - for first transformation (QV)
+    const triangle1 = createTriangle(identityPos, origin, qPos, 0x00ffff, 0.25);
+    scene.add(triangle1);
+    // Triangle 2: (V, origin, QV) - for second transformation (×Q^-1)
+    const triangle2 = createTriangle(vPos, origin, qvPos, 0xff6600, 0.25);
+    triangle2.visible = false;
+    scene.add(triangle2);
+
     const duration = 6000;
     const startTime = Date.now();
 
@@ -1436,14 +1550,19 @@ function animateRealQVQ() {
         const easing = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
         if (t < 0.2) {
-            // Phase 1: Show initial state (1, Q, V, Q^-1)
+            // Phase 1: Show initial state (1, Q, V, Q^-1) with triangle1
             objects.transformedQ.visible = false;
             objects.finalResult.visible = false;
             objects.transformedIdentity.visible = false;
+            triangle1.visible = true;
+            triangle2.visible = false;
         } else if (t < 0.45) {
             // Phase 2: Animate Q -> QV and 1 -> V simultaneously (WITH color change - scale changes)
             const phaseT = (t - 0.2) / 0.25;
             const phaseEased = easing(phaseT);
+
+            triangle1.visible = true;
+            triangle2.visible = false;
 
             // Q -> QV with color change (cyan -> orange)
             objects.transformedQ.visible = true;
@@ -1462,10 +1581,17 @@ function animateRealQVQ() {
             updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity);
             const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
             updateColor(objects.transformedIdentity, currentColorIdentity);
+
+            // Update triangle1: (identity, origin, Q) -> (V, origin, QV)
+            updateTriangle(triangle1, interpolatedIdentity, origin, interpolatedQV);
         } else if (t < 0.75) {
             // Phase 3: Animate QV -> Final and 1 -> Q^(-1) (NO color change - only direction changes)
             const phaseT = (t - 0.45) / 0.30;
             const phaseEased = easing(phaseT);
+
+            // Hide triangle1, show and animate triangle2
+            triangle1.visible = false;
+            triangle2.visible = true;
 
             // Keep QV visible at final position with final color (orange)
             objects.transformedQ.visible = true;
@@ -1484,11 +1610,14 @@ function animateRealQVQ() {
             // 1 -> Q^(-1) - color stays yellow (no scale change, only direction)
             objects.transformedIdentity.visible = true;
             const interpolatedIdentity2 = new THREE.Vector3();
-            interpolatedIdentity2.lerpVectors(identityPos, qInvPos, phaseEased);
+            interpolatedIdentity2.lerpVectors(vPos, qInvPos, phaseEased);
             objects.transformedIdentity.children[0].position.copy(interpolatedIdentity2);
             updateLineGeometry(objects.transformedIdentity.children[1], interpolatedIdentity2);
             // Keep yellow color - no change (only direction changes, not scale)
             updateColor(objects.transformedIdentity, colorIdentityEnd);
+
+            // Update triangle2: (V, origin, QV) -> (Q^-1, origin, Final)
+            updateTriangle(triangle2, interpolatedIdentity2, origin, interpolatedFinal);
         } else {
             // Phase 4: Show final result
             objects.transformedQ.visible = false;
@@ -1501,12 +1630,20 @@ function animateRealQVQ() {
             objects.transformedIdentity.children[0].position.copy(qInvPos);
             updateLineGeometry(objects.transformedIdentity.children[1], qInvPos);
             updateColor(objects.transformedIdentity, colorIdentityEnd);
+
+            // Show final triangle2 at (Q^-1, origin, Final)
+            triangle1.visible = false;
+            triangle2.visible = true;
+            updateTriangle(triangle2, qInvPos, origin, finalPos);
         }
 
         if (t < 1) {
             requestAnimationFrame(animate);
         } else {
             isAnimating = false;
+            // Clean up triangles
+            scene.remove(triangle1);
+            scene.remove(triangle2);
             console.log('Real QVQ^(-1) animation complete');
             console.log('Final position:', result.QVQInv.toString());
             console.log('Final visual position:', finalPos);
@@ -1728,6 +1865,16 @@ function animatePseudoQVQ() {
     // V position for identity transformation target
     const vPos = new THREE.Vector3(params.vx, params.vy, 0);
 
+    // Create triangles for transformation visualization
+    const origin = new THREE.Vector3(0, 0, 0);
+    // Triangle 1: (identity/z-axis, origin, Q) - for first transformation (QV)
+    const triangle1 = createTriangle(zAxis, origin, qPos, 0x00ffff, 0.25);
+    scene.add(triangle1);
+    // Triangle 2: (V, origin, _Q) - for second transformation (×Q^-1)
+    const triangle2 = createTriangle(vPos, origin, transformedQPos, 0xff6600, 0.25);
+    triangle2.visible = false;
+    scene.add(triangle2);
+
     const duration = 6000; // 6 seconds
     const startTime = Date.now();
 
@@ -1754,7 +1901,7 @@ function animatePseudoQVQ() {
         const easing = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
         if (t < 0.25) {
-            // Phase 1: Initial state - show original z-axis, Q, Q^(-1), V
+            // Phase 1: Initial state - show original z-axis, Q, Q^(-1), V with triangle1
             console.log('Phase 1: 초기 상태');
             objects.transformedAxes.visible = false;
             objects.transformedAxes2.visible = false;
@@ -1763,6 +1910,8 @@ function animatePseudoQVQ() {
             newZAxisGroup.visible = false;
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = false;
+            triangle1.visible = true;
+            triangle2.visible = false;
         } else if (t < 0.5) {
             // Phase 2: First transformation (z → V), show _Q (WITH color change - scale changes)
             const phaseT = (t - 0.25) / 0.25;
@@ -1815,6 +1964,11 @@ function animatePseudoQVQ() {
             updateLineGeometryPseudo(objects.transformedIdentity.children[1], interpolatedIdentityPos);
             const currentColorIdentity = colorIdentityStart.clone().lerp(colorIdentityEnd, phaseEased);
             updateColorPseudo(objects.transformedIdentity, currentColorIdentity);
+
+            // Update triangle1: (identity, origin, Q) -> (V, origin, _Q)
+            triangle1.visible = true;
+            triangle2.visible = false;
+            updateTriangle(triangle1, interpolatedIdentityPos, origin, interpolatedQPos);
         } else if (t < 0.75) {
             // Phase 3: Second transformation (NEW z → Q^(-1)) - NO color change, only direction
             const phaseT = (t - 0.5) / 0.25;
@@ -1904,6 +2058,12 @@ function animatePseudoQVQ() {
             objects.transformedIdentity.children[0].position.copy(interpolatedIdentityPos2);
             updateLineGeometryPseudo(objects.transformedIdentity.children[1], interpolatedIdentityPos2);
             updateColorPseudo(objects.transformedIdentity, colorIdentityEnd); // Keep yellow
+
+            // Update triangles: hide triangle1, show and animate triangle2
+            triangle1.visible = false;
+            triangle2.visible = true;
+            // Triangle2: (V, origin, _Q) -> (Q^-1, origin, Final)
+            updateTriangle(triangle2, interpolatedIdentityPos2, origin, interpolatedFinalPos);
         } else {
             // Phase 4: Show final result
             console.log('Phase 4: 최종 결과');
@@ -1915,6 +2075,11 @@ function animatePseudoQVQ() {
             qInvGroup.visible = true;
             transformedQProjectionGroup.visible = false; // Hide projection in final phase
             objects.transformedIdentity.visible = true;
+
+            // Show final triangle2 at (Q^-1, origin, Final)
+            triangle1.visible = false;
+            triangle2.visible = true;
+            updateTriangle(triangle2, qInvPos, origin, finalPos);
 
             // Show final coordinate system
             const pos2 = new THREE.Vector3();
@@ -1943,6 +2108,8 @@ function animatePseudoQVQ() {
             scene.remove(qInvGroup);
             scene.remove(newZAxisGroup);
             scene.remove(transformedQProjectionGroup);
+            scene.remove(triangle1);
+            scene.remove(triangle2);
             console.log('QVQ^(-1) animation complete');
             console.log('Final position:', finalPos);
         }
